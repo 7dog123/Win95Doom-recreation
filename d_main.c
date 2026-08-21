@@ -290,6 +290,10 @@ void D_Display (void)
     {
 	viewactivestate = false;        // view was not active
 	R_FillBackScreen ();    // draw the pattern into the back screen
+	// Entering a level directly (netgame start after arbitration,
+	// or -warp without a title screen visit) must install PLAYPAL;
+	// vanilla only reached levels through states that set it.
+	I_SetPalette (W_CacheLumpName ("PLAYPAL",PU_CACHE));
     }
 
     // see if the border needs to be updated to the screen

@@ -20,8 +20,12 @@ rcsid[] = "$Id: i_w95gdk.cpp,v 1.0 win95 Exp $";
 // Windows headers first, so rpcndr.h's byte/boolean typedefs
 // win over doomtype.h inside this C++ file.
 #define WIN32_LEAN_AND_MEAN
+#define INITGUID
 #include <windows.h>
 #include <ddraw.h>
+#include <dplay.h>
+#include <dplobby.h>
+#include <objbase.h>
 #include <stdio.h>
 #include <stdarg.h>
 #include <stdlib.h>
@@ -468,7 +472,7 @@ static boolean CopyToSurface(LPDIRECTDRAWSURFACE lpDDS, byte* source)
 
 void I_FinishUpdate(void)
 {
-    if (!fAppActive)
+    if (!fAppActive && !M_CheckParm("-alwaysblit"))
 	return;
 
     // Everything goes through the 8 bit offscreen surface first;
@@ -549,9 +553,513 @@ extern "C" void I_GetExeDir(char* buf, int maxlen)
 }
 
 // ---------------------------------------------------------------------------
-// Network - single player only in this phase.
-// DirectPlay multiplayer comes later, as in the original i_w95gdk.cpp.
+// Network - DirectPlay multiplayer, like the original i_w95gdk.cpp.
+// Solo play is the default; -net enables network mode.  The dev/test
+// parms -dphost and -dpjoin <address> bypass the selection dialogs;
+// without them Dialog130/Dialog131 drive provider and session choice,
+// like DOOM95's setup UI.
 // ---------------------------------------------------------------------------
+
+// application guid scoping Doom sessions
+static GUID DOOM_GUID = {0x9b2f4a10,0x1c33,0x11d2,
+			 {0x89,0x5d,0x00,0xa0,0x24,0x6e,0x98,0x17}};
+
+static GUID TCPIP_GUID = {0x36e95ee0,0x8577,0x11cf,
+			  {0x96,0x0c,0x00,0x80,0xc7,0x53,0x4e,0x82}};
+
+static LPDIRECTPLAY3A	lpDP = NULL;		// our session
+static DPID		dpidMe = 0;		// my player id
+static HRESULT		dpr;			// last DirectPlay result
+static DPSESSIONDESC2	sd;			// session description
+static char		szPlayer[32];		// player name
+
+// node table: remotenode -> DirectPlay player id
+static DPID		aNodeDpid[MAXNETNODES];
+
+// providers found by enumeration
+typedef struct
+{
+    GUID	guid;
+    char	name[64];
+} spprovider_t;
+
+static spprovider_t	aProviders[16];
+static int		nProviders = 0;
+
+// sessions found by enumeration
+typedef struct
+{
+    GUID	guidInstance;
+    char	name[64];
+} spsession_t;
+
+static spsession_t	aSessions[16];
+static int		nSessions = 0;
+
+// dialog state for the setup UI
+static HWND		hDlgNet = NULL;
+static int		iNetResult = 0;
+static int		iNetSel = -1;
+static boolean		fNetPickSession = false;
+static char		szGameName[64] = "Doom Session";
+static int		iNumDoomers = 2;
+
+static BOOL WINAPI EnumProvidersCB(LPGUID lpGuid, LPSTR lpName,
+				   DWORD dwMajor, DWORD dwMinor,
+				   LPVOID lpContext)
+{
+    if (lpGuid && nProviders < 16)
+    {
+	memcpy(&aProviders[nProviders].guid, lpGuid, sizeof(GUID));
+	strncpy(aProviders[nProviders].name, lpName, 63);
+	aProviders[nProviders].name[63] = 0;
+	nProviders++;
+    }
+    return TRUE;
+}
+
+static BOOL WINAPI EnumSessionsCB(LPCDPSESSIONDESC2 lpSD,
+				  LPDWORD lpdwTimeOut,
+				  DWORD dwFlags, LPVOID lpContext)
+{
+    if (lpSD && nSessions < 16)
+    {
+	memcpy(&aSessions[nSessions].guidInstance,
+	       &lpSD->guidInstance, sizeof(GUID));
+	if (lpSD->lpszSessionNameA)
+	    strncpy(aSessions[nSessions].name, lpSD->lpszSessionNameA, 63);
+	else
+	    strcpy(aSessions[nSessions].name, "(unnamed)");
+	aSessions[nSessions].name[63] = 0;
+	nSessions++;
+    }
+    return TRUE;
+}
+
+typedef struct
+{
+    DPID	aDpid[MAXNETNODES];
+    int		n;
+} playerscan_t;
+
+static BOOL WINAPI EnumPlayersCB(DPID dpId, DWORD dwPlayerType,
+				 LPCDPNAME lpName, DWORD dwFlags,
+				 LPVOID lpContext)
+{
+    playerscan_t*	ps = (playerscan_t*)lpContext;
+
+    if (dpId && ps->n < MAXNETNODES)
+	ps->aDpid[ps->n++] = dpId;
+    return TRUE;
+}
+
+static int cmpDpid(const void* a, const void* b)
+{
+    DPID	da = *(DPID*)a, db = *(DPID*)b;
+
+    return da < db ? -1 : (da > db ? 1 : 0);
+}
+
+static int I_NodeFromDpid(DPID id)
+{
+    int	i;
+
+    for (i = 0 ; i < MAXNETNODES ; i++)
+	if (aNodeDpid[i] == id)
+	    return i;
+    return -1;
+}
+
+// Assign consoleplayer and the node table: every machine sorts all
+// player ids the same way, so ranks agree everywhere.  Waits until
+// the roster stops changing so late joiners are counted.
+static void I_NetRank(void)
+{
+    playerscan_t	scan;
+    int			i, prev = -1, stable = 0, tries;
+    int			nWant = M_CheckParm("-dphost") ? iNumDoomers : 2;
+
+    memset(&scan, 0, sizeof(scan));
+    for (tries = 0 ; tries < 60 ; tries++)
+    {
+	memset(&scan, 0, sizeof(scan));
+	lpDP->EnumPlayers(NULL, EnumPlayersCB, &scan, 0);
+	if (scan.n == prev && scan.n >= 2)
+	{
+	    stable++;
+	    if ((scan.n >= nWant && stable >= 3) || stable >= 12)
+		break;
+	}
+	else
+	{
+	    stable = 0;
+	    prev = scan.n;
+	}
+	Sleep(500);
+    }
+
+    qsort(scan.aDpid, scan.n, sizeof(DPID), cmpDpid);
+    doomcom->numnodes = scan.n;
+    doomcom->numplayers = scan.n;
+    // Vanilla d_net convention: this machine is always node 0 and
+    // HSendPacket(0) rebounds locally; remote nodes follow in dpid
+    // order.  consoleplayer is the global rank of my dpid, which
+    // every machine computes identically.
+    aNodeDpid[0] = dpidMe;
+    doomcom->consoleplayer = 0;
+    {
+	int	k = 1;
+
+	for (i = 1 ; i < MAXNETNODES ; i++)
+	    aNodeDpid[i] = 0;
+	for (i = 0 ; i < scan.n ; i++)
+	{
+	    if (scan.aDpid[i] == dpidMe)
+		doomcom->consoleplayer = i;
+	    else if (k < MAXNETNODES)
+		aNodeDpid[k++] = scan.aDpid[i];
+	}
+    }
+}
+
+void I_ShutdownDP(void)
+{
+    if (lpDP)
+    {
+	lpDP->Close();
+	lpDP->Release();
+	lpDP = NULL;
+    }
+}
+
+static boolean I_NetStartupProvider(GUID* pGuid)
+{
+    LPDIRECTPLAY	lpDPA = NULL;
+
+    dpr = DirectPlayCreate(pGuid, &lpDPA, NULL);
+    if (dpr != DP_OK)
+	return false;
+    dpr = lpDPA->QueryInterface(IID_IDirectPlay3A, (void**)&lpDP);
+    lpDPA->Release();
+    return dpr == DP_OK;
+}
+
+static boolean I_NetCreatePlayer(void)
+{
+    DPNAME	dn;
+
+    memset(&dn, 0, sizeof(dn));
+    dn.dwSize = sizeof(dn);
+    dn.lpszShortNameA = szPlayer;
+    dn.lpszLongNameA = szPlayer;
+    dpr = lpDP->CreatePlayer(&dpidMe, &dn, NULL, NULL, 0, 0);
+    return dpr == DP_OK;
+}
+
+static boolean I_NetCreateSession(const char* name, int maxplayers)
+{
+    memset(&sd, 0, sizeof(sd));
+    sd.dwSize = sizeof(sd);
+    sd.lpszSessionNameA = (char*)name;
+    sd.guidApplication = DOOM_GUID;
+    sd.dwMaxPlayers = maxplayers;
+
+    dpr = lpDP->Open(&sd, DPOPEN_CREATE);
+    if (dpr != DP_OK)
+	return false;
+    if (!I_NetCreatePlayer())
+	return false;
+
+    // print the instance guid so a joiner can target this session
+    {
+	DWORD		sz = 0;
+	DPSESSIONDESC2*	psd;
+	byte*		g;
+	int		i;
+
+	lpDP->GetSessionDesc(NULL, &sz);
+	if (sz >= sizeof(*psd))
+	{
+	    psd = (DPSESSIONDESC2*)malloc(sz);
+	    memset(psd, 0, sizeof(*psd));
+	    psd->dwSize = sizeof(*psd);
+	    if (lpDP->GetSessionDesc(psd, &sz) == DP_OK)
+	    {
+		g = (byte*)&psd->guidInstance;
+		printf("I_NetHost: session guid ");
+		for (i = 0 ; i < 16 ; i++)
+		    printf("%02x", g[i]);
+		printf("\n");
+		fflush(stdout);
+	    }
+	    free(psd);
+	}
+    }
+    return true;
+}
+
+static boolean ParseGuidHex(const char* s, GUID* out)
+{
+    byte	b[16];
+    int		i;
+
+    if (!s || strlen(s) < 32)
+	return false;
+    for (i = 0 ; i < 16 ; i++)
+    {
+	char	t[3];
+
+	t[0] = s[i * 2];
+	t[1] = s[i * 2 + 1];
+	t[2] = 0;
+	b[i] = (byte)strtoul(t, NULL, 16);
+    }
+    memcpy(out, b, 16);
+    return true;
+}
+
+// Join over TCP/IP to an explicit address (and optionally an exact
+// session instance guid) through the lobby API.
+static boolean I_NetJoinAddress(const char* addr, const GUID* pInstance)
+{
+    LPDIRECTPLAYLOBBY3A	lobby = NULL;
+    LPDIRECTPLAY2	dp2raw = NULL;
+    unsigned char	addrbuf[128];
+    DWORD		addrsize = sizeof(addrbuf);
+    DPLCONNECTION	dpl;
+    DPNAME		dn;
+    GUID		guidINet = DPAID_INet;
+
+    CoInitializeEx(NULL, COINIT_APARTMENTTHREADED);
+
+    dpr = CoCreateInstance(CLSID_DirectPlayLobby, NULL,
+			   CLSCTX_INPROC_SERVER,
+			   IID_IDirectPlayLobby3A, (void**)&lobby);
+    if (dpr != DP_OK)
+	return false;
+
+    dpr = lobby->CreateAddress(TCPIP_GUID, guidINet, (char*)addr,
+			       strlen(addr) + 1, addrbuf, &addrsize);
+    if (dpr != DP_OK)
+    {
+	lobby->Release();
+	return false;
+    }
+
+    memset(&dn, 0, sizeof(dn));
+    dn.dwSize = sizeof(dn);
+    dn.lpszShortNameA = szPlayer;
+    dn.lpszLongNameA = szPlayer;
+
+    memset(&sd, 0, sizeof(sd));
+    sd.dwSize = sizeof(sd);
+    sd.guidApplication = DOOM_GUID;
+    if (pInstance)
+	memcpy(&sd.guidInstance, pInstance, sizeof(GUID));
+
+    memset(&dpl, 0, sizeof(dpl));
+    dpl.dwSize = sizeof(dpl);
+    dpl.dwFlags = DPLCONNECTION_JOINSESSION;
+    dpl.lpSessionDesc = &sd;
+    dpl.lpPlayerName = &dn;
+    dpl.guidSP = TCPIP_GUID;
+    dpl.lpAddress = addrbuf;
+    dpl.dwAddressSize = addrsize;
+
+    dpr = lobby->SetConnectionSettings(0, 0, &dpl);
+    if (dpr == DP_OK)
+	dpr = lobby->Connect(0, &dp2raw, NULL);
+    lobby->Release();
+    if (dpr != DP_OK)
+	return false;
+
+    dpr = dp2raw->QueryInterface(IID_IDirectPlay3A, (void**)&lpDP);
+    dp2raw->Release();
+    if (dpr != DP_OK)
+	return false;
+
+    return I_NetCreatePlayer();
+}
+
+INT_PTR CALLBACK NetPickDlgProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp)
+{
+    switch (msg)
+    {
+      case WM_INITDIALOG:
+	hDlgNet = hwnd;
+	SendDlgItemMessage(hwnd, 1043, LB_RESETCONTENT, 0, 0);
+	if (fNetPickSession)
+	    SendDlgItemMessage(hwnd, 1043, LB_ADDSTRING, 0,
+			       (LPARAM)"(New Game)");
+	for (int i = 0 ;
+	     i < (fNetPickSession ? nSessions : nProviders) ; i++)
+	    SendDlgItemMessage(hwnd, 1043, LB_ADDSTRING, 0,
+			       (LPARAM)(fNetPickSession ?
+					aSessions[i].name :
+					aProviders[i].name));
+	SendDlgItemMessage(hwnd, 1043, LB_SETCURSEL, 0, 0);
+	return TRUE;
+
+      case WM_COMMAND:
+	switch (LOWORD(wp))
+	{
+	  case IDOK:
+	    iNetSel = SendDlgItemMessage(hwnd, 1043, LB_GETCURSEL, 0, 0);
+	    if (iNetSel != LB_ERR)
+	    {
+		iNetResult = 1;
+		DestroyWindow(hwnd);
+	    }
+	    break;
+	  case IDCANCEL:
+	    iNetResult = -1;
+	    DestroyWindow(hwnd);
+	    break;
+	}
+	break;
+
+      case WM_CLOSE:
+	iNetResult = -1;
+	DestroyWindow(hwnd);
+	break;
+
+      case WM_DESTROY:
+	hDlgNet = NULL;
+	break;
+    }
+    return FALSE;
+}
+
+static boolean I_NetPickFromList(void)
+{
+    MSG	msg;
+
+    iNetResult = 0;
+    iNetSel = -1;
+    CreateDialogA(GetModuleHandle(NULL), MAKEINTRESOURCE(130),
+		  NULL, NetPickDlgProc);
+    while (hDlgNet && GetMessageA(&msg, NULL, 0, 0) > 0)
+    {
+	if (!IsDialogMessage(hDlgNet, &msg))
+	{
+	    TranslateMessage(&msg);
+	    DispatchMessageA(&msg);
+	}
+    }
+    return iNetResult == 1;
+}
+
+INT_PTR CALLBACK NetSettingsDlgProc(HWND hwnd, UINT msg, WPARAM wp,
+				    LPARAM lp)
+{
+    switch (msg)
+    {
+      case WM_INITDIALOG:
+	SetDlgItemText(hwnd, 1044, szGameName);
+	CheckRadioButton(hwnd, 1045, 1047,
+			 iNumDoomers == 3 ? 1046 :
+			 iNumDoomers == 4 ? 1047 : 1045);
+	return TRUE;
+
+      case WM_COMMAND:
+	switch (LOWORD(wp))
+	{
+	  case IDOK:
+	    GetDlgItemText(hwnd, 1044, szGameName, 63);
+	    if (IsDlgButtonChecked(hwnd, 1046))
+		iNumDoomers = 3;
+	    else if (IsDlgButtonChecked(hwnd, 1047))
+		iNumDoomers = 4;
+	    else
+		iNumDoomers = 2;
+	    iNetResult = 1;
+	    DestroyWindow(hwnd);
+	    break;
+	  case IDCANCEL:
+	    iNetResult = -1;
+	    DestroyWindow(hwnd);
+	    break;
+	}
+	break;
+
+      case WM_CLOSE:
+	iNetResult = -1;
+	DestroyWindow(hwnd);
+	break;
+
+      case WM_DESTROY:
+	hDlgNet = NULL;
+	break;
+    }
+    return FALSE;
+}
+
+static boolean I_NetAskSettings(void)
+{
+    MSG	msg;
+
+    iNetResult = 0;
+    CreateDialogA(GetModuleHandle(NULL), MAKEINTRESOURCE(131),
+		  NULL, NetSettingsDlgProc);
+    while (hDlgNet && GetMessageA(&msg, NULL, 0, 0) > 0)
+    {
+	if (!IsDialogMessage(hDlgNet, &msg))
+	{
+	    TranslateMessage(&msg);
+	    DispatchMessageA(&msg);
+	}
+    }
+    return iNetResult == 1;
+}
+
+// The full dialog driven flow: pick a connection, then host a new
+// game or join one of the games found on the network.
+static void I_WithPlayers(void)
+{
+    nProviders = 0;
+    DirectPlayEnumerateA(EnumProvidersCB, NULL);
+    if (!nProviders)
+	I_Error("DirectPlay: no service providers found");
+
+    fNetPickSession = false;
+    if (!I_NetPickFromList())
+	I_Error("Network setup cancelled");
+
+    if (!I_NetStartupProvider(&aProviders[iNetSel].guid))
+	I_Error("DirectPlay: cannot start connection");
+
+    nSessions = 0;
+    memset(&sd, 0, sizeof(sd));
+    sd.dwSize = sizeof(sd);
+    sd.guidApplication = DOOM_GUID;
+    {
+	HANDLE	ev = CreateEventA(NULL, FALSE, FALSE, NULL);
+
+	lpDP->EnumSessions(&sd, 5000, EnumSessionsCB, ev,
+			   DPENUMSESSIONS_AVAILABLE);
+	CloseHandle(ev);
+    }
+
+    fNetPickSession = true;
+    if (!I_NetPickFromList())
+	I_Error("Network setup cancelled");
+
+    if (iNetSel == 0)			// (New Game)
+    {
+	if (!I_NetAskSettings())
+	    I_Error("Network setup cancelled");
+	if (!I_NetCreateSession(szGameName, iNumDoomers))
+	    I_Error("DirectPlay: cannot create session");
+    }
+    else
+    {
+	memcpy(&sd.guidInstance,
+	       &aSessions[iNetSel - 1].guidInstance, sizeof(GUID));
+	dpr = lpDP->Open(&sd, DPOPEN_JOIN);
+	if (dpr != DP_OK || !I_NetCreatePlayer())
+	    I_Error("DirectPlay: cannot join session");
+    }
+}
 
 void I_InitNetwork(void)
 {
@@ -573,16 +1081,95 @@ void I_InitNetwork(void)
 	doomcom->ticdup = 1;
 
     doomcom->extratics = 0;
-
-    netgame = false;
     doomcom->id = DOOMCOM_ID;
-    doomcom->numplayers = doomcom->numnodes = 1;
-    doomcom->deathmatch = false;
-    doomcom->consoleplayer = 0;
+
+    if (!M_CheckParm("-net"))
+    {
+	netgame = false;
+	doomcom->numplayers = doomcom->numnodes = 1;
+	doomcom->deathmatch = false;
+	doomcom->consoleplayer = 0;
+	return;
+    }
+
+    netgame = true;
+    doomcom->deathmatch = M_CheckParm("-deathmatch") != 0;
+    strcpy(szPlayer, "Player");
+
+    i = M_CheckParm("-dpname");
+    if (i && i < myargc - 1)
+    {
+	strncpy(szPlayer, myargv[i + 1], 31);
+	szPlayer[31] = 0;
+    }
+
+    i = M_CheckParm("-dpplayers");
+    if (i && i < myargc - 1)
+	iNumDoomers = atoi(myargv[i + 1]);
+    if (iNumDoomers < 2 || iNumDoomers > 4)
+	iNumDoomers = 2;
+
+    if (M_CheckParm("-dphost"))
+    {
+	if (!I_NetStartupProvider(&TCPIP_GUID))
+	    I_Error("DirectPlay: cannot start TCP/IP");
+	if (!I_NetCreateSession(szGameName, iNumDoomers))
+	    I_Error("DirectPlay: cannot create session");
+    }
+    else if ((i = M_CheckParm("-dpjoin")) != 0 && i < myargc - 1)
+    {
+	GUID	inst;
+	boolean	fHaveInst = false;
+
+	i = M_CheckParm("-dpguid");
+	if (i && i < myargc - 1)
+	    fHaveInst = ParseGuidHex(myargv[i + 1], &inst);
+	if (!I_NetJoinAddress(myargv[M_CheckParm("-dpjoin") + 1],
+			      fHaveInst ? &inst : NULL))
+	    I_Error("DirectPlay: cannot join session");
+    }
+    else
+	I_WithPlayers();
+
+    I_NetRank();
+    atexit(I_ShutdownDP);
 }
 
 void I_NetCmd(void)
 {
-    if (doomcom->numnodes > 1)
-	I_Error("Network play is not available in this build");
+    static byte	pkt[512];
+
+    if (!netgame || !lpDP)
+	return;
+
+    if (doomcom->command == CMD_SEND)
+    {
+	lpDP->Send(dpidMe, DPID_ALLPLAYERS, 0,
+		   (void*)&doomcom->data, doomcom->datalength);
+    }
+    else if (doomcom->command == CMD_GET)
+    {
+	doomcom->remotenode = -1;
+	for (;;)
+	{
+	    DWORD	size = sizeof(pkt);
+	    DPID	from = 0, to = 0;
+	    int		node;
+
+	    dpr = lpDP->Receive(&from, &to, DPRECEIVE_ALL, pkt, &size);
+	    if (dpr != DP_OK)
+		break;			// no more messages
+	    if (from == 0 || from == dpidMe)
+		continue;		// system message or echo
+	    node = I_NodeFromDpid(from);
+	    if (node < 0)
+		continue;
+	    if (size > sizeof(doomcom->data))
+		size = sizeof(doomcom->data);
+	    memcpy(&doomcom->data, pkt, size);
+	    doomcom->datalength = size;
+	    doomcom->remotenode = node;
+	    break;
+	}
+    }
 }

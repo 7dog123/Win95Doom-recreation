@@ -13,7 +13,7 @@ CXX	= $(CROSS)g++
 CFLAGS	= -std=gnu89 -g -O1 -Wall -DWIN95
 CXXFLAGS= -g -O1 -Wall -DWIN95
 LDFLAGS	= -mwindows -static-libgcc
-LIBS	= -lddraw -ldsound -ldinput -ldxguid -lwinmm -lgdi32 -luser32 -ladvapi32 -lm
+LIBS	= -lddraw -ldsound -ldinput -ldplayx -lole32 -ldxguid -lwinmm -lgdi32 -luser32 -ladvapi32 -lm
 
 # subdirectory for objects
 O	= obj
