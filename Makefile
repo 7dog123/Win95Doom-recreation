@@ -13,7 +13,7 @@ CXX	= $(CROSS)g++
 CFLAGS	= -std=gnu89 -g -O1 -Wall -DWIN95
 CXXFLAGS= -g -O1 -Wall -DWIN95
 LDFLAGS	= -mwindows -static-libgcc
-LIBS	= -lddraw -ldsound -lwinmm -lgdi32 -luser32 -ladvapi32 -lm
+LIBS	= -lddraw -ldsound -ldinput -ldxguid -lwinmm -lgdi32 -luser32 -ladvapi32 -lm
 
 # subdirectory for objects
 O	= obj
@@ -25,6 +25,7 @@ OBJS	=			\
 	$(O)/i_vkey.o		\
 	$(O)/i_config.o		\
 	$(O)/i_launch.o		\
+	$(O)/i_dinput.o		\
 	$(O)/i_sound.o		\
 	$(O)/i_winmus.o		\
 	$(O)/doomdef.o		\

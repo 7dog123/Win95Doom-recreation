@@ -182,6 +182,24 @@ M_ReadFile
 int		usemouse;
 int		usejoystick;
 
+#ifdef WIN95
+// DirectInput joystick settings, owned by i_dinput.c
+extern int	joy_id;
+extern int	joy_turn_sensitivity;
+extern int	joy_move_sensitivity;
+extern int	joy_turn_threshold;
+extern int	joy_move_threshold;
+extern int	joyb_fist_saw;
+extern int	joyb_pistol;
+extern int	joyb_shotgun;
+extern int	joyb_chaingun;
+extern int	joyb_missile;
+extern int	joyb_plasma;
+extern int	joyb_bfg;
+extern int	joyb_inc;
+extern int	joyb_dec;
+#endif
+
 extern int	key_right;
 extern int	key_left;
 extern int	key_up;
@@ -295,6 +313,24 @@ default_t	defaults[] =
     {"joyb_use",&joybuse,3},
     {"joyb_speed",&joybspeed,2},
 
+#ifdef WIN95
+    // DirectInput joystick settings (i_dinput.c)
+    {"joy_id",&joy_id, 0},
+    {"joy_turn_sensitivity",&joy_turn_sensitivity, 10},
+    {"joy_move_sensitivity",&joy_move_sensitivity, 10},
+    {"joy_turn_threshold",&joy_turn_threshold, 10},
+    {"joy_move_threshold",&joy_move_threshold, 20},
+    {"joyb_fist_saw",&joyb_fist_saw, -1},
+    {"joyb_pistol",&joyb_pistol, -1},
+    {"joyb_shotgun",&joyb_shotgun, -1},
+    {"joyb_chaingun",&joyb_chaingun, -1},
+    {"joyb_missile",&joyb_missile, -1},
+    {"joyb_plasma",&joyb_plasma, -1},
+    {"joyb_bfg",&joyb_bfg, -1},
+    {"joyb_inc",&joyb_inc, -1},
+    {"joyb_dec",&joyb_dec, -1},
+#endif
+
     {"screenblocks",&screenblocks, 9},
     {"detaillevel",&detailLevel, 0},
 
@@ -332,6 +368,36 @@ char*	defaultfile;
 static boolean	fSkipRegistry = false;
 
 #define CONFIG_REGKEY	"SOFTWARE\\ID\\Doom95\\Config"
+
+//
+// M_GetConfigString - read a string value from the registry config,
+// falling back to the given default. Used for settings that don't
+// fit the int defaults table (joystick axis map, feedback DLL).
+//
+void M_GetConfigString (char* name, char* out, int outlen, char* defval)
+{
+    HKEY	hkey;
+    char	tmp[256];
+    DWORD	cb = sizeof(tmp) - 1;
+    DWORD	type;
+
+    strncpy (out, defval, outlen - 1);
+    out[outlen - 1] = 0;
+
+    if (RegOpenKeyA (HKEY_CURRENT_USER, CONFIG_REGKEY, &hkey)
+	!= ERROR_SUCCESS)
+	return;
+
+    if (RegQueryValueExA (hkey, name, NULL, &type, (BYTE*)tmp, &cb)
+	== ERROR_SUCCESS && type == REG_SZ)
+    {
+	tmp[cb] = 0;
+	strncpy (out, tmp, outlen - 1);
+	out[outlen - 1] = 0;
+    }
+
+    RegCloseKey (hkey);
+}
 
 //
 // M_SaveConfigFile - write the defaults as a text file

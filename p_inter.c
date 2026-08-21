@@ -47,6 +47,10 @@ rcsid[] = "$Id: p_inter.c,v 1.4 1997/02/03 22:45:11 b1 Exp $";
 #endif
 #include "p_inter.h"
 
+#ifdef WIN95
+#include "i_dinput.h"
+#endif
+
 
 #define BONUSADD	6
 
@@ -873,6 +877,11 @@ P_DamageMobj
 	
 	player->attacker = source;
 	player->damagecount += damage;	// add damage after armor / invuln
+
+#ifdef WIN95
+	// force feedback, like DOOM95's DoomForce
+	I_ForceFeedback (damage);
+#endif
 
 	if (player->damagecount > 100)
 	    player->damagecount = 100;	// teleport stomp does 10k points...

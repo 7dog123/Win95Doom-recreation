@@ -48,6 +48,10 @@ void M_LoadDefaults (void);
 
 void M_SaveDefaults (void);
 
+#ifdef WIN95
+void M_GetConfigString (char* name, char* out, int outlen, char* defval);
+#endif
+
 
 int
 M_DrawText

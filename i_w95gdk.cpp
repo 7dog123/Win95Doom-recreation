@@ -44,6 +44,7 @@ extern "C" {
 #include "m_misc.h"
 #include "v_video.h"
 #include "i_launch.h"
+#include "i_dinput.h"
 }
 
 // from doom95.cpp
@@ -327,6 +328,9 @@ void I_StartTic(void)
 	D_PostEvent(&event);
 	mousex = mousey = 0;
     }
+
+    // DirectInput joystick, like DOOM95's I_ReadDirectInput
+    I_ReadDirectInput();
 }
 
 void I_StartFrame(void)
@@ -345,6 +349,9 @@ void I_InitGraphics(void)
     // the game display is taking over - drop the splash
     LaunchDone();
 
+    // DirectInput joystick, like DOOM95
+    I_StartupJoystick();
+
     graphics_started = true;
     GrabOrReleaseMouse();
 }
@@ -358,6 +365,7 @@ void I_ShutdownGraphics(void)
     fMouseGrabbed = false;
     ShowCursor(TRUE);
 
+    I_ShutdownDirectInput();
     finiObjects();
     graphics_started = false;
 }
