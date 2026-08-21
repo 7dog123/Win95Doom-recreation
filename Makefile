@@ -23,6 +23,8 @@ OBJS	=			\
 	$(O)/i_w95gdk.o		\
 	$(O)/i_main.o		\
 	$(O)/i_vkey.o		\
+	$(O)/i_config.o		\
+	$(O)/i_launch.o		\
 	$(O)/i_sound.o		\
 	$(O)/i_winmus.o		\
 	$(O)/doomdef.o		\
