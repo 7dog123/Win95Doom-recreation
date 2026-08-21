@@ -472,8 +472,9 @@ static boolean CopyToSurface(LPDIRECTDRAWSURFACE lpDDS, byte* source)
 
 void I_FinishUpdate(void)
 {
-    if (!fAppActive && !M_CheckParm("-alwaysblit"))
-	return;
+    // Always paint while the game runs. Gating on fAppActive left
+    // unfocused windows showing black wherever activation events are
+    // unreliable; simulation already continues regardless.
 
     // Everything goes through the 8 bit offscreen surface first;
     // the blit to the (possibly hi-color) destination does the

@@ -360,10 +360,11 @@ static boolean CreateWindowMode(void)
     if (!CreateOffscreenSurface(false))
 	return false;
 
-    if (lpDD->CreateClipper(0, &lpClipper, NULL) != DD_OK)
-	return false;
-    lpClipper->SetHWnd(0, hwndMain);
-    lpDDSPrimary->SetClipper(lpClipper);
+    // NOTE: no clipper on the primary. The original attached one to keep
+    // blits inside the window while partially covered, but wine culls
+    // updates against stale visibility info during startup (window not
+    // mapped yet / launcher teardown), leaving permanent black bands.
+    // Without a clipper every blit lands unconditionally.
 
     memset(ppe, 0, sizeof(ppe));
     if (lpDD->CreatePalette(DDPCAPS_8BIT | DDPCAPS_ALLOW256,

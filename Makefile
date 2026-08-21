@@ -10,7 +10,7 @@ CROSS	= i686-w64-mingw32-
 CC	= $(CROSS)gcc
 CXX	= $(CROSS)g++
 
-CFLAGS	= -std=gnu89 -g -O1 -Wall -DWIN95
+CFLAGS	= -std=gnu89 -g -O1 -Wall -DWIN95 -DRANGECHECK
 CXXFLAGS= -g -O1 -Wall -DWIN95
 LDFLAGS	= -mwindows -static-libgcc
 LIBS	= -lddraw -ldsound -ldinput -ldplayx -lole32 -ldxguid -lwinmm -lgdi32 -luser32 -ladvapi32 -lm
