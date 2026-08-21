@@ -16,11 +16,17 @@
 static const char
 rcsid[] = "$Id: i_main.c,v 1.0 win95 Exp $";
 
+#include <stdio.h>
+
 #include "doomdef.h"
 #include "m_argv.h"
 #include "d_main.h"
 
 void doom_main(void)
 {
+    // A GUI app has no console - keep stdout unbuffered so that
+    // redirected output (logging) is written as it happens.
+    setvbuf(stdout, NULL, _IONBF, 0);
+
     D_DoomMain();
 }

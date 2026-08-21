@@ -35,6 +35,19 @@ rcsid[] = "$Id: m_misc.c,v 1.6 1997/02/03 22:45:10 b1 Exp $";
 
 #include <ctype.h>
 
+#ifdef WIN95
+// Windows headers first: rpcndr.h declares byte/boolean, so
+// doomtype.h must not redeclare them inside this file.
+// (No WIN32_LEAN_AND_MEAN - we need rpcndr.h to come along.)
+#include <windows.h>
+
+#define __BYTEBOOL__
+
+#ifndef true
+#define true	1
+#define false	0
+#endif
+#endif
 
 #include "doomdef.h"
 
@@ -308,6 +321,242 @@ int	numdefaults;
 char*	defaultfile;
 
 
+#ifdef WIN95
+//
+// DOOM95 keeps its configuration in the registry, like the original:
+// everything lives under HKEY_CURRENT_USER\SOFTWARE\ID\Doom95\Config.
+// -config <file> on the command line falls back to a plain
+// default.cfg style text file instead (fSkipRegistry).
+//
+
+static boolean	fSkipRegistry = false;
+
+#define CONFIG_REGKEY	"SOFTWARE\\ID\\Doom95\\Config"
+
+//
+// M_SaveConfigFile - write the defaults as a text file
+//
+static void M_SaveConfigFile (void)
+{
+    int		i;
+    int		v;
+    FILE*	f;
+
+    f = fopen (defaultfile, "w");
+    if (!f)
+	return; // can't write the file, but don't complain
+
+    for (i=0 ; i<numdefaults ; i++)
+    {
+	if (defaults[i].defaultvalue > -0xfff
+	    && defaults[i].defaultvalue < 0xfff)
+	{
+	    v = *defaults[i].location;
+	    fprintf (f,"%s\t\t%i\n",defaults[i].name,v);
+	} else {
+	    fprintf (f,"%s\t\t\"%s\"\n",defaults[i].name,
+		     * (char **) (defaults[i].location));
+	}
+    }
+
+    fclose (f);
+}
+
+
+//
+// M_SaveConfig - write the defaults into the registry
+//
+static void M_SaveConfig (void)
+{
+    HKEY	hkey;
+    int		i;
+
+    if (RegCreateKeyA (HKEY_CURRENT_USER, CONFIG_REGKEY, &hkey)
+	!= ERROR_SUCCESS)
+	return; // can't write the key, but don't complain
+
+    for (i=0 ; i<numdefaults ; i++)
+    {
+	if (defaults[i].defaultvalue > -0xfff
+	    && defaults[i].defaultvalue < 0xfff)
+	{
+	    DWORD	v = *defaults[i].location;
+
+	    RegSetValueExA (hkey, defaults[i].name, 0, REG_DWORD,
+			    (BYTE *)&v, sizeof(v));
+	}
+	else
+	{
+	    char*	s = *(char **) (defaults[i].location);
+
+	    RegSetValueExA (hkey, defaults[i].name, 0, REG_SZ,
+			    (BYTE *)s, strlen(s) + 1);
+	}
+    }
+
+    RegCloseKey (hkey);
+}
+
+
+//
+// M_SaveDefaults
+//
+void M_SaveDefaults (void)
+{
+    if (fSkipRegistry)
+	M_SaveConfigFile ();
+    else
+	M_SaveConfig ();
+}
+
+
+//
+// M_LoadConfigFile - read a default.cfg style text file
+//
+static void M_LoadConfigFile (void)
+{
+    int		i;
+    int		len;
+    FILE*	f;
+    char	def[80];
+    char	strparm[100];
+    char*	newstring;
+    int		parm;
+    boolean	isstring;
+
+    // read the file in, overriding any set defaults
+    f = fopen (defaultfile, "r");
+    if (!f)
+	return;
+
+    while (!feof(f))
+    {
+	isstring = false;
+	if (fscanf (f, "%79s %[^\n]\n", def, strparm) == 2)
+	{
+	    if (strparm[0] == '"')
+	    {
+		// get a string default
+		isstring = true;
+		len = strlen(strparm);
+		newstring = (char *) malloc(len);
+		strparm[len-1] = 0;
+		strcpy(newstring, strparm+1);
+	    }
+	    else if (strparm[0] == '0' && strparm[1] == 'x')
+		sscanf(strparm+2, "%x", &parm);
+	    else
+		sscanf(strparm, "%i", &parm);
+	    for (i=0 ; i<numdefaults ; i++)
+		if (!strcmp(def, defaults[i].name))
+		{
+		    if (!isstring)
+			*defaults[i].location = parm;
+		    else
+			*defaults[i].location =
+			    (int) newstring;
+		    break;
+		}
+	}
+    }
+
+    fclose (f);
+}
+
+
+//
+// M_LoadConfig - read the defaults from the registry
+//
+static void M_LoadConfig (void)
+{
+    HKEY	hkey;
+    int		i;
+
+    if (RegOpenKeyA (HKEY_CURRENT_USER, CONFIG_REGKEY, &hkey)
+	!= ERROR_SUCCESS)
+    {
+	// no key yet - fall back to the config file
+	M_LoadConfigFile ();
+	return;
+    }
+
+    printf ("Using '%s' as the config key\n", CONFIG_REGKEY);
+
+    for (i=0 ; i<numdefaults ; i++)
+    {
+	BYTE		data[256];
+	DWORD		type;
+	DWORD		cb = sizeof(data);
+
+	if (RegQueryValueExA (hkey, defaults[i].name, NULL,
+			      &type, data, &cb) != ERROR_SUCCESS)
+	    continue;
+
+	printf ("	config entry: %s\n", defaults[i].name);
+
+	if (type == REG_DWORD && cb >= sizeof(DWORD))
+	{
+	    *defaults[i].location = *(DWORD *) data;
+	}
+	else if (type == REG_SZ && cb > 0)
+	{
+	    char*	newstring = (char *) malloc(cb);
+
+	    memcpy (newstring, data, cb);
+	    newstring[cb-1] = 0;
+	    *defaults[i].location = (int) newstring;
+	}
+    }
+
+    RegCloseKey (hkey);
+
+    // clamp volumes that may have been written out of range
+    if (snd_SfxVolume < 0 || snd_SfxVolume > 15)
+    {
+	printf ("LoadConfig: Fixing Sound Volume\n");
+	snd_SfxVolume = 8;
+    }
+    if (snd_MusicVolume < 0 || snd_MusicVolume > 15)
+    {
+	printf ("LoadConfig: Fixing Music Volume\n");
+	snd_MusicVolume = 8;
+    }
+}
+
+
+//
+// M_LoadDefaults
+//
+void M_LoadDefaults (void)
+{
+    int		i;
+
+    // set everything to base values
+    numdefaults = sizeof(defaults)/sizeof(defaults[0]);
+    for (i=0 ; i<numdefaults ; i++)
+	*defaults[i].location = defaults[i].defaultvalue;
+
+    // -config forces the plain file instead of the registry
+    i = M_CheckParm ("-config");
+    if (i && i<myargc-1)
+    {
+	fSkipRegistry = true;
+	defaultfile = myargv[i+1];
+	printf ("	default file: %s\n",defaultfile);
+    }
+    else
+	defaultfile = basedefault;
+
+    printf ("M_LoadConfig: Load system defaults.\n");
+
+    if (fSkipRegistry)
+	M_LoadConfigFile ();
+    else
+	M_LoadConfig ();
+}
+
+#else // !WIN95
+
 //
 // M_SaveDefaults
 //
@@ -403,10 +652,12 @@ void M_LoadDefaults (void)
 		    }
 	    }
 	}
-		
+
 	fclose (f);
     }
 }
+
+#endif // WIN95
 
 
 //

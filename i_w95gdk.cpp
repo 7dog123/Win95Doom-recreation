@@ -43,6 +43,7 @@ extern "C" {
 #include "m_argv.h"
 #include "m_misc.h"
 #include "v_video.h"
+#include "i_launch.h"
 }
 
 // from doom95.cpp
@@ -341,6 +342,9 @@ static byte	currentpalette[768];
 
 void I_InitGraphics(void)
 {
+    // the game display is taking over - drop the splash
+    LaunchDone();
+
     graphics_started = true;
     GrabOrReleaseMouse();
 }

@@ -71,6 +71,9 @@ static const char rcsid[] = "$Id: d_main.c,v 1.8 1997/02/03 22:45:09 b1 Exp $";
 #include "i_system.h"
 #include "i_sound.h"
 #include "i_video.h"
+#ifdef WIN95
+#include "i_launch.h"
+#endif
 
 #include "g_game.h"
 
@@ -1071,17 +1074,23 @@ void D_DoomMain (void)
     }
     
     // init subsystems
+    // splash progress: one tick per init phase below
+    SetTick (10);
     printf ("V_Init: allocate screens.\n");
     V_Init ();
+    AdvanceTick ();
 
     printf ("M_LoadDefaults: Load system defaults.\n");
     M_LoadDefaults ();              // load before initing other systems
+    AdvanceTick ();
 
     printf ("Z_Init: Init zone memory allocation daemon. \n");
     Z_Init ();
 
     printf ("W_Init: Init WADfiles.\n");
     W_InitMultipleFiles (wadfiles);
+    AdvanceTick ();
+    LaunchDebug ("WADs loaded.");
     
 
     // Check for -file in shareware
@@ -1156,24 +1165,31 @@ void D_DoomMain (void)
 
     printf ("R_Init: Init DOOM refresh daemon - ");
     R_Init ();
+    AdvanceTick ();
 
     printf ("\nP_Init: Init Playloop state.\n");
     P_Init ();
+    AdvanceTick ();
 
     printf ("I_Init: Setting up machine state.\n");
     I_Init ();
+    AdvanceTick ();
 
     printf ("D_CheckNetGame: Checking network game status.\n");
     D_CheckNetGame ();
+    AdvanceTick ();
 
     printf ("S_Init: Setting up sound.\n");
     S_Init (snd_SfxVolume /* *8 */, snd_MusicVolume /* *8*/ );
+    AdvanceTick ();
 
     printf ("HU_Init: Setting up heads up display.\n");
     HU_Init ();
+    AdvanceTick ();
 
     printf ("ST_Init: Init status bar.\n");
     ST_Init ();
+    AdvanceTick ();
 
     // check for a driver that wants intermission stats
     p = M_CheckParm ("-statcopy");

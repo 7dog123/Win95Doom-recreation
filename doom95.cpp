@@ -33,6 +33,7 @@ extern "C" {
 #include "m_argv.h"
 #include "i_system.h"
 #include "i_video.h"
+#include "i_launch.h"
 }
 
 // exported by i_w95gdk.cpp
@@ -48,6 +49,8 @@ void                ToggleFullScreen(void);
 void                ResizeWindowToMode(void);
 void                PumpMessages(void);
 extern "C" void     finiObjects(void);
+extern "C" void     ActivateConfigure(void);
+extern "C" boolean  IsDlgConfigureMessage(void* pmsg);
 
 // ---------------------------------------------------------------------------
 // Screen modes, cycled with the +/- keys like DOOM95's SwitchScreenSize.
@@ -481,6 +484,16 @@ static void HandleKey(int vk, boolean down)
 	return;
     }
 
+    // Alt+C opens the key configuration dialog.
+    if (vk == 'C' && (GetKeyState(VK_MENU) & 0x8000))
+    {
+	static boolean fWasDown = false;
+	if (down && !fWasDown)
+	    ActivateConfigure();
+	fWasDown = down;
+	return;
+    }
+
     // +/- cycle the window size in windowed mode.
     if ((vk == VK_ADD || vk == VK_OEM_PLUS) && !I_IsFullscreen() && down)
     {
@@ -590,6 +603,9 @@ void PumpMessages(void)
 	    fQuitPosted = true;
 	    I_Quit();
 	}
+	// let the configure dialog eat its own messages
+	if (IsDlgConfigureMessage(&msg))
+	    continue;
 	TranslateMessage(&msg);
 	DispatchMessage(&msg);
     }
@@ -689,6 +705,9 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance,
     hInstApp = hInstance;
     ParseCommandLine(lpCmdLine);
 
+    // Splash first, like DOOM95's launcher window.
+    LaunchWndInit(hInstance);
+
     if (!doInit(hInstance))
     {
 	MessageError("Failed to create the Doom95 window");
@@ -715,6 +734,10 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance,
 
     // The game loop only returns via exit() from I_Quit.
     atexit(finiObjects);
+
+    // -configure opens the key configuration dialog at startup.
+    if (M_CheckParm("-configure"))
+	ActivateConfigure();
 
     doom_main();
 
