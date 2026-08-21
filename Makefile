@@ -86,13 +86,19 @@ OBJS	=			\
 	$(O)/info.o		\
 	$(O)/sounds.o
 
+WINDRES	= $(CROSS)windres
+RES	= $(O)/doom95_res.o
+
 all:	$(O) $(O)/DOOM95.EXE
 
 $(O):
 	mkdir -p $(O)
 
-$(O)/DOOM95.EXE:	$(OBJS)
-	$(CXX) $(LDFLAGS) $(OBJS) -o $@ $(LIBS)
+$(O)/DOOM95.EXE:	$(OBJS) $(RES)
+	$(CXX) $(LDFLAGS) $(OBJS) $(RES) -o $@ $(LIBS)
+
+$(RES):	doom95.rc res/*.bmp res/*.ico
+	$(WINDRES) -I res -O coff -o $@ $<
 
 $(O)/%.o:	%.c
 	$(CC) $(CFLAGS) -c $< -o $@

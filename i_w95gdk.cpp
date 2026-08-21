@@ -53,6 +53,7 @@ extern "C" boolean	fAppActive;
 extern "C" boolean	fInFullScreen;
 extern "C" boolean	fMouseGrabbed;
 extern "C" boolean	fStretchOut;
+extern "C" boolean	fPartialPalette;
 extern "C" int		iBackWidth;
 extern "C" int		iBackHeight;
 extern "C" LPDIRECTDRAWSURFACE	lpDDSPrimary;
@@ -392,7 +393,23 @@ static boolean CopyToSurface(LPDIRECTDRAWSURFACE lpDDS, byte* source)
 {
     DDSURFACEDESC	ddsd;
     byte*		dest;
+    byte*		pal = gamePalette;
+    byte		palWork[768];
     int			y, x;
+
+    // Debug "Partial" palette: dim everything past the first 16
+    // entries, so palette problems become obvious.
+    if (fPartialPalette)
+    {
+	memcpy(palWork, gamePalette, 768);
+	for (x = 16 ; x < 256 ; x++)
+	{
+	    palWork[x * 3]     /= 4;
+	    palWork[x * 3 + 1] /= 4;
+	    palWork[x * 3 + 2] /= 4;
+	}
+	pal = palWork;
+    }
 
     memset(&ddsd, 0, sizeof(ddsd));
     ddsd.dwSize = sizeof(ddsd);
@@ -421,9 +438,9 @@ static boolean CopyToSurface(LPDIRECTDRAWSURFACE lpDDS, byte* source)
 	    for (x = 0 ; x < SCREENWIDTH ; x++)
 	    {
 		int	i = s[x] * 3;
-		d[x] = ((gamePalette[i]     * iRMax / 255) << iRShift) |
-		       ((gamePalette[i + 1] * iGMax / 255) << iGShift) |
-		       ((gamePalette[i + 2] * iBMax / 255) << iBShift);
+		d[x] = ((pal[i]     * iRMax / 255) << iRShift) |
+		       ((pal[i + 1] * iGMax / 255) << iGShift) |
+		       ((pal[i + 2] * iBMax / 255) << iBShift);
 	    }
 	}
     }
@@ -438,9 +455,9 @@ static boolean CopyToSurface(LPDIRECTDRAWSURFACE lpDDS, byte* source)
 	    {
 		int	i = s[x] * 3;
 		d[x] = (unsigned short)
-		       (((gamePalette[i]     * iRMax / 255) << iRShift) |
-			((gamePalette[i + 1] * iGMax / 255) << iGShift) |
-			((gamePalette[i + 2] * iBMax / 255) << iBShift));
+		       (((pal[i]     * iRMax / 255) << iRShift) |
+			((pal[i + 1] * iGMax / 255) << iGShift) |
+			((pal[i + 2] * iBMax / 255) << iBShift));
 	    }
 	}
     }

@@ -7,10 +7,10 @@
 // Licensed under the GNU General Public License 2.0.
 //
 // DESCRIPTION:
-//	i_config.c - the key configuration dialog, like DOOM95.
-//	Recreated from the debug symbol layout: DOOMKeyName,
-//	DOOMKeyCheck, RVirtKeyToDOOM, keystore, ConfigureDialogProc,
-//	IsDlgConfigureMessage, ActivateConfigure, UpdateMenu,
+//	i_config.c - the Player Controls dialog, like DOOM95's
+//	Dialog104. Recreated from the debug symbol layout:
+//	DOOMKeyName, DOOMKeyCheck, RVirtKeyToDOOM, keystore,
+//	ConfigureDialogProc, IsDlgConfigureMessage, ActivateConfigure,
 //	ResetMouse, ShowStore, PlaceWindow, pEditWndProc.
 //
 //-----------------------------------------------------------------------------
@@ -57,27 +57,75 @@ extern int	mouseSensitivity;
 extern int	mousebfire;
 extern int	mousebstrafe;
 extern int	mousebforward;
+extern int	usemouse;
+
+// control ids in dialog resource 104
+#define IDC_KEY_FWD	1018		// Forward
+#define IDC_KEY_BACK	1019		// Backward
+#define IDC_KEY_TURNL	1020		// Turn Left
+#define IDC_KEY_TURNR	1021		// Turn Right
+#define IDC_KEY_USE	1022		// Use (Open)
+#define IDC_KEY_FIRE	1023		// Fire
+#define IDC_KEY_SPEED	1024		// Speed On
+#define IDC_KEY_STRAFE	1025		// Strafe On
+#define IDC_KEY_STRAFEL	1026		// Strafe Left
+#define IDC_KEY_STRAFER	1027		// Strafe Right
+#define IDC_CHK_MOUSE	1013		// Use Mouse
+#define IDC_MOUSE_FWD	1030		// mouse button for forward
+#define IDC_MOUSE_STRAFE 1029		// mouse button for strafe
+#define IDC_MOUSE_FIRE	1028		// mouse button for fire
+#define IDC_CHK_ALLKEYS	1041		// allow all keys
+#define IDC_APPLY	1042
+#define IDC_DEFAULTS	1040
+#define IDC_HELPBTN	1031
 
 typedef struct
 {
-    char*	action;
+    int		id;
     int*	binding;
-} bind_t;
+    HWND	hwnd;
+    WNDPROC	oldproc;
+} editbind_t;
 
-static bind_t	aBinds[] =
+// keyboard fields, in dialog order
+static editbind_t aKeyEdits[] =
 {
-    { "Fire",		 &key_fire },
-    { "Forward",	 &key_up },
-    { "Backward",	 &key_down },
-    { "Turn Left",	 &key_left },
-    { "Turn Right",	 &key_right },
-    { "Strafe Left",	 &key_strafeleft },
-    { "Strafe Right",	 &key_straferight },
-    { "Speed / Run",	 &key_speed },
-    { "Strafe Modifier", &key_strafe },
-    { "Use / Open",	 &key_use },
+    { IDC_KEY_FWD,	 &key_up },
+    { IDC_KEY_BACK,	 &key_down },
+    { IDC_KEY_TURNL,	 &key_left },
+    { IDC_KEY_TURNR,	 &key_right },
+    { IDC_KEY_STRAFEL,	 &key_strafeleft },
+    { IDC_KEY_STRAFER,	 &key_straferight },
+    { IDC_KEY_SPEED,	 &key_speed },
+    { IDC_KEY_STRAFE,	 &key_strafe },
+    { IDC_KEY_USE,	 &key_use },
+    { IDC_KEY_FIRE,	 &key_fire },
 };
-#define NUMBINDS  (int)(sizeof(aBinds)/sizeof(aBinds[0]))
+#define NUMKEYED  (int)(sizeof(aKeyEdits)/sizeof(aKeyEdits[0]))
+
+// vanilla bindings, same order as aKeyEdits
+static int aDefKeys[NUMKEYED] =
+{
+    KEY_UPARROW,
+    KEY_DOWNARROW,
+    KEY_LEFTARROW,
+    KEY_RIGHTARROW,
+    ',',
+    '.',
+    KEY_RSHIFT,
+    KEY_RALT,
+    ' ',
+    KEY_RCTRL,
+};
+
+// mouse button fields
+static editbind_t aMouseEdits[] =
+{
+    { IDC_MOUSE_FWD,	&mousebforward },
+    { IDC_MOUSE_STRAFE,	&mousebstrafe },
+    { IDC_MOUSE_FIRE,	&mousebfire },
+};
+#define NUMMOUSE  (int)(sizeof(aMouseEdits)/sizeof(aMouseEdits[0]))
 
 // State of virtual keys, maintained while the dialog runs.
 byte	keystore[256];
@@ -85,20 +133,12 @@ byte	keystore[256];
 // When set, even Alt combinations reach the capture control.
 static boolean	fFullKeyboard = false;
 
-static HWND	hDlgConfigure = NULL;	// the modeless dialog
-static HWND	hwndDlgList = NULL;
-static HWND	hwndDlgEdit = NULL;
-static WNDPROC	pEditWndProc = NULL;	// saved edit control procedure
+static HWND	hDlgConfigure = NULL;
 
-static boolean	fCapturing = false;	// waiting for a new key
-static int	iCaptureBind = 0;
-static int	aSavedBindings[NUMBINDS];	// cancel restores these
-
-// control ids in the dialog template
-#define IDC_BINDLIST	1001
-#define IDC_CAPTURE	1002
-#define IDC_RESETMOUSE	1003
-#define IDC_PROMPT	1004
+// cancel restores these
+static int	aSavedKeys[NUMKEYED];
+static int	aSavedMouse[NUMMOUSE];
+static int	fSavedUseMouse;
 
 // ---------------------------------------------------------------------------
 // Key names.
@@ -168,13 +208,13 @@ int RVirtKeyToDOOM(int doomkey)
     return 0;
 }
 
-// Index of the binding already using a DOOM key, or -1.
+// Index of the keyboard binding already using a DOOM key, or -1.
 int DOOMKeyCheck(int doomkey)
 {
     int	i;
 
-    for (i = 0 ; i < NUMBINDS ; i++)
-	if (*aBinds[i].binding == doomkey)
+    for (i = 0 ; i < NUMKEYED ; i++)
+	if (*aKeyEdits[i].binding == doomkey)
 	    return i;
 
     return -1;
@@ -236,110 +276,117 @@ static void PlaceWindow(HWND hwnd)
 }
 
 // ---------------------------------------------------------------------------
-// Dialog contents.
+// Field display and change tracking.
 // ---------------------------------------------------------------------------
 
-static void UpdateMenu(void)
+static void MarkDirty(HWND hwnd)
 {
-    char	line[64];
-    int		i;
-
-    if (!hwndDlgList)
-	return;
-
-    SendMessage(hwndDlgList, LB_RESETCONTENT, 0, 0);
-
-    for (i = 0 ; i < NUMBINDS ; i++)
-    {
-	sprintf(line, "%-17s %s", aBinds[i].action,
-		DOOMKeyName(*aBinds[i].binding));
-	SendMessage(hwndDlgList, LB_ADDSTRING, 0, (LPARAM)line);
-    }
+    EnableWindow(GetDlgItem(hwnd, IDC_APPLY), TRUE);
 }
 
-// Restore the default mouse settings.
-static void ResetMouse(void)
+static void ShowKeyField(int i)
 {
+    SetWindowText(aKeyEdits[i].hwnd, DOOMKeyName(*aKeyEdits[i].binding));
+}
+
+static void ShowMouseField(int i)
+{
+    char	buf[8];
+
+    sprintf(buf, "%d", *aMouseEdits[i].binding);
+    SetWindowText(aMouseEdits[i].hwnd, buf);
+}
+
+static void ShowAllFields(void)
+{
+    int	i;
+
+    for (i = 0 ; i < NUMKEYED ; i++)
+	ShowKeyField(i);
+    for (i = 0 ; i < NUMMOUSE ; i++)
+	ShowMouseField(i);
+}
+
+// Restore the default settings, like DOOM95's ResetMouse plus keys.
+static void ResetDefaults(HWND hwnd)
+{
+    int	i;
+
+    for (i = 0 ; i < NUMKEYED ; i++)
+	*aKeyEdits[i].binding = aDefKeys[i];
     mousebfire = 0;
     mousebstrafe = 1;
     mousebforward = 2;
     mouseSensitivity = 5;
 
-    MessageBox(hDlgConfigure,
-	       "Mouse buttons and sensitivity restored.",
-	       "Doom95", MB_OK | MB_ICONINFORMATION);
-}
-
-static void SetPrompt(const char* text)
-{
-    SendDlgItemMessage(hDlgConfigure, IDC_PROMPT, WM_SETTEXT,
-		       0, (LPARAM)text);
-}
-
-static void ArmCapture(int index)
-{
-    char	prompt[80];
-
-    iCaptureBind = index;
-    fCapturing = true;
-    fFullKeyboard = true;
-
-    sprintf(prompt, "Press the new key for \"%s\"  (Esc cancels)",
-	    aBinds[index].action);
-    SetPrompt(prompt);
-    SetFocus(hwndDlgEdit);
-}
-
-static void DisarmCapture(void)
-{
-    fCapturing = false;
-    fFullKeyboard = false;
-    SetPrompt("Double-click an action to change its key.");
-    SendMessage(hwndDlgList, LB_SETCURSEL, iCaptureBind, 0);
-    SetFocus(hwndDlgList);
+    ShowAllFields();
+    MarkDirty(hwnd);
 }
 
 // ---------------------------------------------------------------------------
-// Subclassed capture edit: swallows keystrokes while a binding is armed.
+// Subclassed keyboard fields: select a field, press a key - assigned.
 // ---------------------------------------------------------------------------
 
-LRESULT CALLBACK CaptureEditProc(HWND hwnd, UINT message,
-				 WPARAM wParam, LPARAM lParam)
+static int FindKeyEdit(HWND hwnd)
 {
-    MSG	msg;
+    int	i;
+
+    for (i = 0 ; i < NUMKEYED ; i++)
+	if (aKeyEdits[i].hwnd == hwnd)
+	    return i;
+
+    return -1;
+}
+
+static int FindMouseEdit(HWND hwnd)
+{
+    int	i;
+
+    for (i = 0 ; i < NUMMOUSE ; i++)
+	if (aMouseEdits[i].hwnd == hwnd)
+	    return i;
+
+    return -1;
+}
+
+LRESULT CALLBACK KeyEditProc(HWND hwnd, UINT message,
+			     WPARAM wParam, LPARAM lParam)
+{
+    int	i = FindKeyEdit(hwnd);
 
     switch (message)
     {
+      case WM_GETDLGCODE:
+	// we want every key, including arrows and tab
+	return DLGC_WANTALLKEYS | DLGC_WANTCHARS;
+
       case WM_KEYDOWN:
       case WM_SYSKEYDOWN:
 	keystore[wParam & 0xff] = 1;
 
-	if (fCapturing)
+	if (message == WM_SYSKEYDOWN && !fFullKeyboard)
+	    break;			// filtered, not bindable
+
+	if (wParam != VK_ESCAPE || message == WM_SYSKEYDOWN)
 	{
-	    int	doomkey;
+	    int	doomkey = VirtKeyToDOOM((int)wParam);
 
-	    if (wParam == VK_ESCAPE)
-	    {
-		DisarmCapture();
-		return 0;
-	    }
-
-	    doomkey = VirtKeyToDOOM((int)wParam);
-	    if (doomkey)
+	    if (doomkey && i >= 0)
 	    {
 		int	other = DOOMKeyCheck(doomkey);
 
-		if (other >= 0 && other != iCaptureBind)
+		if (other >= 0 && other != i)
 		{
 		    // swap with the other action, so no key dies
-		    *aBinds[other].binding = *aBinds[iCaptureBind].binding;
+		    *aKeyEdits[other].binding =
+			*aKeyEdits[i].binding;
+		    ShowKeyField(other);
 		}
-		*aBinds[iCaptureBind].binding = doomkey;
-
-		UpdateMenu();
-		DisarmCapture();
+		*aKeyEdits[i].binding = doomkey;
+		ShowKeyField(i);
+		MarkDirty(GetParent(hwnd));
 	    }
-	    else
+	    else if (!doomkey)
 	    {
 		MessageBeep(MB_ICONASTERISK);
 	    }
@@ -361,18 +408,45 @@ LRESULT CALLBACK CaptureEditProc(HWND hwnd, UINT message,
 	return 0;
     }
 
-    if (message == WM_SYSKEYDOWN && !fFullKeyboard)
+    return CallWindowProc(aKeyEdits[i].oldproc, hwnd, message,
+			  wParam, lParam);
+}
+
+// ---------------------------------------------------------------------------
+// Subclassed mouse fields: click a button on the field - assigned.
+// ---------------------------------------------------------------------------
+
+LRESULT CALLBACK MouseEditProc(HWND hwnd, UINT message,
+			       WPARAM wParam, LPARAM lParam)
+{
+    int	i = FindMouseEdit(hwnd);
+
+    switch (message)
     {
-	// let the dialog manager translate it
-	msg.hwnd = hwnd;
-	msg.message = message;
-	msg.wParam = wParam;
-	msg.lParam = lParam;
-	IsDialogMessage(hDlgConfigure, &msg);
+      case WM_LBUTTONDOWN:
+      case WM_MBUTTONDOWN:
+      case WM_RBUTTONDOWN:
+	if (i >= 0)
+	{
+	    int	btn = (message == WM_LBUTTONDOWN) ? 0 :
+		       (message == WM_RBUTTONDOWN) ? 1 : 2;
+
+	    *aMouseEdits[i].binding = btn;
+	    ShowMouseField(i);
+	    MarkDirty(GetParent(hwnd));
+	    SetFocus(hwnd);
+	}
+	return 0;
+
+      case WM_CHAR:
+	return 0;
+
+      case WM_CONTEXTMENU:
 	return 0;
     }
 
-    return CallWindowProc(pEditWndProc, hwnd, message, wParam, lParam);
+    return CallWindowProc(aMouseEdits[i].oldproc, hwnd, message,
+			  wParam, lParam);
 }
 
 // ---------------------------------------------------------------------------
@@ -385,34 +459,61 @@ INT_PTR CALLBACK ConfigureDialogProc(HWND hwnd, UINT message,
     switch (message)
     {
       case WM_INITDIALOG:
-	hDlgConfigure = hwnd;
-	hwndDlgList = GetDlgItem(hwnd, IDC_BINDLIST);
-	hwndDlgEdit = GetDlgItem(hwnd, IDC_CAPTURE);
+      {
+	  int	i;
 
-	// subclass the capture edit, like DOOM95's pEditWndProc
-	pEditWndProc = (WNDPROC)GetWindowLongPtr(hwndDlgEdit,
-						 GWLP_WNDPROC);
-	SetWindowLongPtr(hwndDlgEdit, GWLP_WNDPROC,
-			 (LONG_PTR)CaptureEditProc);
+	  hDlgConfigure = hwnd;
 
-	memset(keystore, 0, sizeof(keystore));
-	UpdateMenu();
-	SetPrompt("Double-click an action to change its key.");
-	SendMessage(hwndDlgList, LB_SETCURSEL, 0, 0);
-	return TRUE;
+	  for (i = 0 ; i < NUMKEYED ; i++)
+	  {
+	      aKeyEdits[i].hwnd = GetDlgItem(hwnd, aKeyEdits[i].id);
+	      aKeyEdits[i].oldproc = (WNDPROC)GetWindowLongPtr(
+		  aKeyEdits[i].hwnd, GWLP_WNDPROC);
+	      SetWindowLongPtr(aKeyEdits[i].hwnd, GWLP_WNDPROC,
+			       (LONG_PTR)KeyEditProc);
+	  }
+	  for (i = 0 ; i < NUMMOUSE ; i++)
+	  {
+	      aMouseEdits[i].hwnd = GetDlgItem(hwnd, aMouseEdits[i].id);
+	      aMouseEdits[i].oldproc = (WNDPROC)GetWindowLongPtr(
+		  aMouseEdits[i].hwnd, GWLP_WNDPROC);
+	      SetWindowLongPtr(aMouseEdits[i].hwnd, GWLP_WNDPROC,
+			       (LONG_PTR)MouseEditProc);
+	  }
+
+	  memset(keystore, 0, sizeof(keystore));
+	  fFullKeyboard = false;
+	  ShowAllFields();
+	  CheckDlgButton(hwnd, IDC_CHK_MOUSE,
+			 usemouse ? BST_CHECKED : BST_UNCHECKED);
+	  CheckDlgButton(hwnd, IDC_CHK_ALLKEYS, BST_UNCHECKED);
+
+	  // remember everything so cancel can restore it
+	  for (i = 0 ; i < NUMKEYED ; i++)
+	      aSavedKeys[i] = *aKeyEdits[i].binding;
+	  for (i = 0 ; i < NUMMOUSE ; i++)
+	      aSavedMouse[i] = *aMouseEdits[i].binding;
+	  fSavedUseMouse = usemouse;
+      }
+      return TRUE;
 
       case WM_COMMAND:
 	switch (LOWORD(wParam))
 	{
-	  case IDC_BINDLIST:
-	    if (HIWORD(wParam) == LBN_DBLCLK)
+	  case IDC_CHK_MOUSE:
+	    if (HIWORD(wParam) == BN_CLICKED)
 	    {
-		int	sel = SendMessage(hwndDlgList, LB_GETCURSEL,
-					  0, 0);
-
-		if (sel >= 0)
-		    ArmCapture(sel);
+		usemouse = IsDlgButtonChecked(hwnd, IDC_CHK_MOUSE)
+			   == BST_CHECKED ? 1 : 0;
+		MarkDirty(hwnd);
 	    }
+	    break;
+
+	  case IDC_CHK_ALLKEYS:
+	    if (HIWORD(wParam) == BN_CLICKED)
+		fFullKeyboard = IsDlgButtonChecked(hwnd,
+						   IDC_CHK_ALLKEYS)
+				== BST_CHECKED ? true : false;
 	    break;
 
 	  case IDOK:
@@ -422,18 +523,35 @@ INT_PTR CALLBACK ConfigureDialogProc(HWND hwnd, UINT message,
 	    break;
 
 	  case IDCANCEL:
-	    {
-		int	i;
+	  {
+	      int	i;
 
-		for (i = 0 ; i < NUMBINDS ; i++)
-		    *aBinds[i].binding = aSavedBindings[i];
-	    }
-	    ShowStore(hwnd);
-	    DestroyWindow(hwnd);
+	      for (i = 0 ; i < NUMKEYED ; i++)
+		  *aKeyEdits[i].binding = aSavedKeys[i];
+	      for (i = 0 ; i < NUMMOUSE ; i++)
+		  *aMouseEdits[i].binding = aSavedMouse[i];
+	      usemouse = fSavedUseMouse;
+	  }
+	  ShowStore(hwnd);
+	  DestroyWindow(hwnd);
+	  break;
+
+	  case IDC_APPLY:
+	    M_SaveDefaults();
+	    EnableWindow(GetDlgItem(hwnd, IDC_APPLY), FALSE);
 	    break;
 
-	  case IDC_RESETMOUSE:
-	    ResetMouse();
+	  case IDC_DEFAULTS:
+	    ResetDefaults(hwnd);
+	    break;
+
+	  case IDC_HELPBTN:
+	    MessageBox(hwnd,
+		       "Select a keyboard field and press the key "
+		       "you wish to assign.\n\n"
+		       "Click a mouse button on a mouse field to "
+		       "assign that button.",
+		       "Player Controls", MB_OK | MB_ICONINFORMATION);
 	    break;
 	}
 	break;
@@ -444,8 +562,6 @@ INT_PTR CALLBACK ConfigureDialogProc(HWND hwnd, UINT message,
 
       case WM_DESTROY:
 	hDlgConfigure = NULL;
-	hwndDlgList = NULL;
-	hwndDlgEdit = NULL;
 	break;
     }
 
@@ -453,145 +569,54 @@ INT_PTR CALLBACK ConfigureDialogProc(HWND hwnd, UINT message,
 }
 
 // ---------------------------------------------------------------------------
-// Template construction and activation.
+// Activation.
 // ---------------------------------------------------------------------------
-
-static WORD* AlignDword(WORD* p)
-{
-    while ((uintptr_t)p & 3)
-	p++;
-    return p;
-}
-
-static WORD* AddString(WORD* p, const char* s)
-{
-    do
-    {
-	*p++ = (WORD)*s;
-    } while (*s++);
-    return p;
-}
-
-static WORD* AddItem(WORD* p, DWORD style, DWORD exStyle,
-		     short x, short y, short cx, short cy,
-		     WORD id, BYTE atom, const char* title)
-{
-    DLGITEMTEMPLATE*	item;
-
-    p = AlignDword(p);
-    item = (DLGITEMTEMPLATE*)p;
-    item->style = style;
-    item->dwExtendedStyle = exStyle;
-    item->x = x;
-    item->y = y;
-    item->cx = cx;
-    item->cy = cy;
-    item->id = id;
-
-    // The template format uses exactly 18 bytes for the item
-    // header - sizeof() rounds up to 20 and would corrupt the
-    // following items.
-    p = (WORD*)((BYTE*)item + 18);
-    *p++ = 0xffff;			// ordinal follows
-    *p++ = atom;			// predefined class atom
-    p = AddString(p, title);		// title text
-    *p++ = 0;				// no creation data
-    return p;
-}
 
 void ActivateConfigure(void)
 {
-    // DWORD aligned - DirectDraw of all things taught us to mind
-    // alignment in this project.
-    static DWORD	buffer[512];
-    DLGTEMPLATE*	tpl = (DLGTEMPLATE*)buffer;
-    WORD*		p;
-    int			i;
-    int			cdit = 6;
-
     if (hDlgConfigure)
     {
 	SetForegroundWindow(hDlgConfigure);
 	return;
     }
 
-    memset(buffer, 0, sizeof(buffer));
-
-    tpl->style = WS_POPUP | WS_CAPTION | WS_SYSMENU | DS_SETFONT;
-    tpl->dwExtendedStyle = 0;
-    tpl->cdit = cdit;
-    tpl->x = 40;
-    tpl->y = 40;
-    tpl->cx = 190;
-    tpl->cy = 150;
-
-    p = (WORD*)(tpl + 1);
-    *p++ = 0;				// no menu
-    *p++ = 0;				// default dialog class
-    p = AddString(p, "Doom95 Setup");	// caption
-    *p++ = 8;				// point size
-    p = AddString(p, "MS Sans Serif");
-
-    p = AddItem(p, WS_CHILD | WS_VISIBLE | SS_LEFT,
-		0, 6, 6, 178, 10,
-		IDC_PROMPT, 0x0082, "Double-click an action");
-
-    p = AddItem(p, WS_CHILD | WS_VISIBLE | WS_BORDER | WS_VSCROLL |
-		WS_GROUP | WS_TABSTOP | LBS_NOTIFY,
-		WS_EX_CLIENTEDGE, 6, 20, 178, 96,
-		IDC_BINDLIST, 0x0083, "");
-
-    p = AddItem(p, WS_CHILD | WS_VISIBLE | WS_BORDER | WS_TABSTOP |
-		ES_AUTOHSCROLL,
-		WS_EX_CLIENTEDGE, 6, 122, 178, 10,
-		IDC_CAPTURE, 0x0081, "");
-
-    p = AddItem(p, WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON |
-		WS_TABSTOP,
-		0, 24, 136, 50, 12,
-		IDC_RESETMOUSE, 0x0080, "Reset Mouse");
-
-    p = AddItem(p, WS_CHILD | WS_VISIBLE | BS_DEFPUSHBUTTON |
-		WS_TABSTOP,
-		0, 88, 136, 50, 12,
-		IDOK, 0x0080, "Save");
-
-    p = AddItem(p, WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON |
-		WS_TABSTOP,
-		0, 142, 136, 50, 12,
-		IDCANCEL, 0x0080, "Cancel");
-
-    // Unicode template dialect: every string is a WORD sequence,
-    // so the W entry point must be used explicitly.
-    CreateDialogIndirectParamW(GetModuleHandle(NULL),
-			       (LPCDLGTEMPLATEW)tpl,
-			       NULL, ConfigureDialogProc, 0);
-
-    if (!hDlgConfigure)
-	printf("ActivateConfigure: dialog creation failed (%lu)\n",
-	       GetLastError());
-    else
     {
-	// remember the bindings so cancel can restore them
-	for (i = 0 ; i < NUMBINDS ; i++)
-	    aSavedBindings[i] = *aBinds[i].binding;
+	HWND	hdlg = CreateDialogA(GetModuleHandle(NULL),
+				     MAKEINTRESOURCE(104),
+				     NULL, ConfigureDialogProc);
 
-	ShowWindow(hDlgConfigure, SW_SHOWNORMAL);
-	UpdateWindow(hDlgConfigure);
+	if (!hdlg)
+	    return;
+	hDlgConfigure = hdlg;
 
 	// restore the stored position once the window is mapped
 	PlaceWindow(hDlgConfigure);
+	SetForegroundWindow(hDlgConfigure);
     }
 }
 
 // Route messages through the modeless dialog while it is open,
-// like DOOM95's IsDlgConfigureMessage.
+// like DOOM95's IsDlgConfigureMessage. While an entry field has
+// focus every key goes to it untouched, so any key can be bound.
 boolean IsDlgConfigureMessage(void* pmsg)
 {
     MSG*	msg = (MSG*)pmsg;
 
     if (hDlgConfigure)
+    {
+	HWND	focus = GetFocus();
+
+	if (focus && GetParent(focus) == hDlgConfigure)
+	{
+	    char	cls[8];
+
+	    if (GetClassNameA(focus, cls, sizeof(cls)) &&
+		!lstrcmpiA(cls, "edit"))
+		return false;
+	}
+
 	return IsDialogMessage(hDlgConfigure, msg) ? true : false;
+    }
 
     return false;
 }

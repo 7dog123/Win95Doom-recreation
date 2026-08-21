@@ -1,0 +1,157 @@
+// doom95.rc - resources recreated from the original DOOM95.EXE dump
+// Bitmap and string table IDs match the original binary.
+
+#include <windows.h>
+
+// ---------------------------------------------------------------------------
+// Artwork (original resource IDs)
+// ---------------------------------------------------------------------------
+
+102 BITMAP "res/Bitmap102.bmp"
+125 BITMAP "res/Bitmap125.bmp"
+126 BITMAP "res/Bitmap126.bmp"		// progress bar track
+127 BITMAP "res/Bitmap127.bmp"		// progress bar fill
+128 BITMAP "res/Bitmap128.bmp"		// splash background
+129 BITMAP "res/Bitmap129.bmp"		// splash logo art
+132 BITMAP "res/Bitmap132.bmp"
+
+// ---------------------------------------------------------------------------
+// Icons (original resource IDs)
+// ---------------------------------------------------------------------------
+
+1 ICON "res/Icon1.ico"
+2 ICON "res/Icon2.ico"
+
+// ---------------------------------------------------------------------------
+// Debug menu, recreated from the original Menu103 (-menu attaches it)
+// ---------------------------------------------------------------------------
+
+103 MENU
+BEGIN
+  POPUP "File"
+  BEGIN
+    MENUITEM "E&xit", 40011
+  END
+  POPUP "Palette"
+  BEGIN
+    MENUITEM "Full", 40004
+    MENUITEM "Partial", 40005
+  END
+  POPUP "Screen"
+  BEGIN
+    MENUITEM "Full", 40006
+    MENUITEM "Window", 40002
+  END
+  POPUP "Size"
+  BEGIN
+    MENUITEM "320x200", 40007
+    MENUITEM "320x240", 40008
+    MENUITEM "512x384", 40009
+    MENUITEM "640x400", 40010
+  END
+  POPUP "Options"
+  BEGIN
+    MENUITEM "&Player Controls...", 40003
+  END
+END
+
+// ---------------------------------------------------------------------------
+// Version resource, recreated from the original VersionInfo1
+// ---------------------------------------------------------------------------
+
+1 VERSIONINFO
+FILEVERSION 3,0,0,0
+PRODUCTVERSION 3,0,0,0
+FILEOS 0x10004
+FILETYPE 0x1
+BEGIN
+  BLOCK "StringFileInfo"
+  BEGIN
+    BLOCK "040904b0"
+    BEGIN
+      VALUE "CompanyName", "id Software"
+      VALUE "FileDescription", "doom95"
+      VALUE "FileVersion", "3, 0, 0, 0"
+      VALUE "InternalName", "doom95"
+      VALUE "LegalCopyright", "Copyright \xA9 1995 id Software ALL RIGHTS RESERVED"
+      VALUE "OriginalFilename", "doom95.exe"
+      VALUE "ProductName", " doom95"
+      VALUE "ProductVersion", "3, 0, 0, 0"
+    END
+  END
+  BLOCK "VarFileInfo"
+  BEGIN
+    VALUE "Translation", 0x0409, 0x04B0
+  END
+END
+
+// ---------------------------------------------------------------------------
+// Splash credits, shown rotating in the fine print pane (original IDs)
+// ---------------------------------------------------------------------------
+
+STRINGTABLE
+{
+  40001, 	"Causes Doom 95 to run full screen"
+  40002, 	"Causes Doom 95 to run in a window"
+  40003, 	"\r\nWindows\xAE 95 version by Fred Hommel and Roger Weiss\r\nMIDI code crafted by Jungle Jim Geist\r\nDigital joystick support by Marcus Andrews\r\nOrchestrated by Alex St. John\r\nKudos to Craig Eisler, Eric Engstrom and Todd Laney\r\nGrudging respect to Robert Hess\r\n"
+  40004, 	"Copyright\xA9 1995 id Software, Inc.\r\nAll Rights Reserved"
+  40005, 	"Doom95"
+  40006, 	"Original Programmers: John Carmack, John Romero and Dave Taylor\r\n"
+  40007, 	"Artists: Adrian Carmack and Kevin Cloud\r\n"
+  40008, 	"Designer: Sandy Petersen\r\n"
+  40009, 	"Level Design: Sandy Petersen, John Romero and American McGee\r\n"
+  40010, 	"Biz: Jay Wilber\r\n"
+  40011, 	"Software Support: Shawn Green and American McGee\r\n"
+  40012, 	"Music/FX: Robert Prince\r\n"
+  40013, 	"Special Thanks To: Gregor Punchatz\r\n"
+  40014, 	"Alex made us say that, Robert."
+  40015, 	"Additional assistance by Monolith, Inc.\r\n"
+}
+
+// ---------------------------------------------------------------------------
+// Player Controls dialog, recreated from the original Dialog104
+// ---------------------------------------------------------------------------
+
+104 DIALOG 0, 0, 237, 240
+STYLE DS_SETFONT | DS_MODALFRAME | WS_POPUP | WS_VISIBLE | WS_CAPTION | WS_SYSMENU
+CAPTION "Player Controls"
+FONT 8, "MS Sans Serif"
+BEGIN
+  CONTROL "OK", 1, "BUTTON", BS_DEFPUSHBUTTON | WS_CHILD | WS_VISIBLE | WS_TABSTOP, 177, 9, 50, 14
+  CONTROL "Cancel", 2, "BUTTON", BS_PUSHBUTTON | WS_CHILD | WS_VISIBLE | WS_TABSTOP, 177, 25, 50, 14
+  CONTROL "Appl&y", 1042, "BUTTON", BS_PUSHBUTTON | WS_CHILD | WS_VISIBLE | WS_DISABLED | WS_TABSTOP, 177, 41, 50, 14
+  CONTROL "&Defaults", 1040, "BUTTON", BS_PUSHBUTTON | WS_CHILD | WS_VISIBLE | WS_TABSTOP, 177, 57, 50, 14
+  CONTROL "&Help", 1031, "BUTTON", BS_PUSHBUTTON | WS_CHILD | WS_VISIBLE | WS_TABSTOP, 177, 73, 50, 14
+  CONTROL "&Keyboard\nSettings", -1, "STATIC", SS_CENTER | WS_CHILD | WS_VISIBLE | WS_GROUP, 60, 10, 40, 19
+  CONTROL "Movement", -1, "BUTTON", BS_GROUPBOX | WS_CHILD | WS_VISIBLE, 6, 19, 50, 97
+  CONTROL "Forward:", -1, "STATIC", SS_RIGHT | WS_CHILD | WS_VISIBLE | WS_GROUP, 23, 34, 30, 8
+  CONTROL "", 1018, "EDIT", ES_LEFT | ES_AUTOHSCROLL | WS_CHILD | WS_VISIBLE | WS_BORDER | WS_TABSTOP, 60, 31, 40, 13
+  CONTROL "Backward:", -1, "STATIC", SS_RIGHT | WS_CHILD | WS_VISIBLE | WS_GROUP, 17, 48, 36, 8
+  CONTROL "", 1019, "EDIT", ES_LEFT | ES_AUTOHSCROLL | WS_CHILD | WS_VISIBLE | WS_BORDER | WS_TABSTOP, 60, 45, 40, 13
+  CONTROL "Turn Left:", -1, "STATIC", SS_RIGHT | WS_CHILD | WS_VISIBLE | WS_GROUP, 19, 62, 34, 8
+  CONTROL "", 1020, "EDIT", ES_LEFT | ES_AUTOHSCROLL | WS_CHILD | WS_VISIBLE | WS_BORDER | WS_TABSTOP, 60, 59, 40, 13
+  CONTROL "Turn Right:", -1, "STATIC", SS_RIGHT | WS_CHILD | WS_VISIBLE | WS_GROUP, 15, 76, 38, 8
+  CONTROL "", 1021, "EDIT", ES_LEFT | ES_AUTOHSCROLL | WS_CHILD | WS_VISIBLE | WS_BORDER | WS_TABSTOP, 60, 73, 40, 13
+  CONTROL "Strafe Left:", -1, "STATIC", SS_RIGHT | WS_CHILD | WS_VISIBLE | WS_GROUP, 15, 90, 38, 8
+  CONTROL "", 1026, "EDIT", ES_LEFT | ES_AUTOHSCROLL | WS_CHILD | WS_VISIBLE | WS_BORDER | WS_TABSTOP, 60, 87, 40, 13
+  CONTROL "Strafe Right:", -1, "STATIC", SS_RIGHT | WS_CHILD | WS_VISIBLE | WS_GROUP, 10, 104, 43, 8
+  CONTROL "", 1027, "EDIT", ES_LEFT | ES_AUTOHSCROLL | WS_CHILD | WS_VISIBLE | WS_BORDER | WS_TABSTOP, 60, 101, 40, 13
+  CONTROL "Modifier", -1, "BUTTON", BS_GROUPBOX | WS_CHILD | WS_VISIBLE, 6, 117, 50, 41
+  CONTROL "Speed On:", -1, "STATIC", SS_RIGHT | WS_CHILD | WS_VISIBLE | WS_GROUP, 17, 132, 36, 8
+  CONTROL "", 1024, "EDIT", ES_LEFT | ES_AUTOHSCROLL | WS_CHILD | WS_VISIBLE | WS_BORDER | WS_TABSTOP, 60, 129, 40, 13
+  CONTROL "Strafe On:", -1, "STATIC", SS_RIGHT | WS_CHILD | WS_VISIBLE | WS_GROUP, 18, 146, 35, 8
+  CONTROL "", 1025, "EDIT", ES_LEFT | ES_AUTOHSCROLL | WS_CHILD | WS_VISIBLE | WS_BORDER | WS_TABSTOP, 60, 143, 40, 13
+  CONTROL "Action", -1, "BUTTON", BS_GROUPBOX | WS_CHILD | WS_VISIBLE, 6, 159, 50, 45
+  CONTROL "Use (Open):", -1, "STATIC", SS_RIGHT | WS_CHILD | WS_VISIBLE | WS_GROUP, 13, 174, 40, 8
+  CONTROL "", 1022, "EDIT", ES_LEFT | ES_AUTOHSCROLL | WS_CHILD | WS_VISIBLE | WS_BORDER | WS_TABSTOP, 60, 171, 40, 13
+  CONTROL "Fire:", -1, "STATIC", SS_RIGHT | WS_CHILD | WS_VISIBLE | WS_GROUP, 37, 188, 16, 8
+  CONTROL "", 1023, "EDIT", ES_LEFT | ES_AUTOHSCROLL | WS_CHILD | WS_VISIBLE | WS_BORDER | WS_TABSTOP, 60, 185, 40, 13
+  CONTROL "Use &Mouse", 1013, "BUTTON", BS_AUTOCHECKBOX | WS_CHILD | WS_VISIBLE | WS_TABSTOP, 109, 9, 48, 10
+  CONTROL "", 1030, "EDIT", ES_LEFT | ES_AUTOHSCROLL | WS_CHILD | WS_VISIBLE | WS_BORDER | WS_TABSTOP, 109, 31, 49, 13
+  CONTROL "", 1029, "EDIT", ES_LEFT | ES_AUTOHSCROLL | WS_CHILD | WS_VISIBLE | WS_BORDER | WS_TABSTOP, 109, 143, 49, 13
+  CONTROL "", 1028, "EDIT", ES_LEFT | ES_AUTOHSCROLL | WS_CHILD | WS_VISIBLE | WS_BORDER | WS_TABSTOP, 109, 185, 49, 13
+  CONTROL "For the Keyboard: Select the desired option entry field and press the key that you wish to assign to that option.", -1, "STATIC", SS_LEFT | WS_CHILD | WS_VISIBLE | WS_GROUP, 167, 93, 65, 59
+  CONTROL "For the Mouse: Click the desired mouse button on the option entry field that you wish to assign.", -1, "STATIC", SS_LEFT | WS_CHILD | WS_VISIBLE | WS_GROUP, 167, 158, 65, 52
+  CONTROL "", -1, "STATIC", SS_BLACKRECT | WS_CHILD | WS_VISIBLE, 104, 6, 1, 193
+  CONTROL "Allow &all keys, including ALT and F10 (not recommended)", 1041, "BUTTON", BS_AUTOCHECKBOX | WS_CHILD | WS_VISIBLE | WS_TABSTOP, 6, 212, 225, 10
+END

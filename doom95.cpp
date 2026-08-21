@@ -40,6 +40,7 @@ extern "C" {
 extern "C" void     doom_main(void);
 extern "C" boolean  I_IsFullscreen(void);
 extern "C" void     I_PostKeyboardEvent(int type, int key);
+extern "C" void     I_PostMouseButtonEvent(int button, boolean down);
 extern "C" void     I_SetAppActive(boolean active);
 extern "C" void     I_NewWindowSize(int width, int height);
 
@@ -65,13 +66,15 @@ typedef struct
 static screenmode	aScreenModes[] =
 {
     { 320, 200 },
+    { 320, 240 },
+    { 512, 384 },
     { 640, 400 },
-    { 960, 600 },
 };
 #define NUM_SCREEN_MODES  (int)(sizeof(aScreenModes)/sizeof(aScreenModes[0]))
 
 int			iSMPointer = 0;		// current mode index
 boolean			fStretchOut = false;	// stretch to whole client area
+boolean			fPartialPalette = false; // debug: Palette/Partial
 boolean			fAllowWindow = true;
 boolean			fBlockWM_SIZE = false;
 
@@ -555,6 +558,69 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT message,
 	HandleKey((int)wParam, false);
 	break;
 
+      // Mouse buttons: 0=left, 1=right, 2=middle, like DOOM95.
+      case WM_LBUTTONDOWN:
+	I_PostMouseButtonEvent(0, true);
+	return 0;
+      case WM_LBUTTONUP:
+	I_PostMouseButtonEvent(0, false);
+	return 0;
+      case WM_RBUTTONDOWN:
+	I_PostMouseButtonEvent(1, true);
+	return 0;
+      case WM_RBUTTONUP:
+	I_PostMouseButtonEvent(1, false);
+	return 0;
+      case WM_MBUTTONDOWN:
+	I_PostMouseButtonEvent(2, true);
+	return 0;
+      case WM_MBUTTONUP:
+	I_PostMouseButtonEvent(2, false);
+	return 0;
+
+      // Debug menu commands (Menu103), like DOOM95's -menu bar.
+      case WM_COMMAND:
+	switch (LOWORD(wParam))
+	{
+	  case 40011:			// File/Exit
+	    PostMessage(hwnd, WM_CLOSE, 0, 0);
+	    break;
+
+	  case 40004:			// Palette/Full
+	    fPartialPalette = false;
+	    break;
+	  case 40005:			// Palette/Partial
+	    fPartialPalette = true;
+	    break;
+
+	  case 40006:			// Screen/Full
+	    if (!I_IsFullscreen())
+		ToggleFullScreen();
+	    break;
+	  case 40002:			// Screen/Window
+	    if (I_IsFullscreen())
+		ToggleFullScreen();
+	    break;
+
+	  case 40007:			// Size/320x200
+	  case 40008:			// Size/320x240
+	  case 40009:			// Size/512x384
+	  case 40010:			// Size/640x400
+	    if (!I_IsFullscreen())
+	    {
+		iSMPointer = LOWORD(wParam) - 40007;
+		fBlockWM_SIZE = true;
+		ResizeWindowToMode();
+		fBlockWM_SIZE = false;
+	    }
+	    break;
+
+	  case 40003:			// Options/Player Controls
+	    ActivateConfigure();
+	    break;
+	}
+	break;
+
       case WM_KILLFOCUS:
 	I_SetAppActive(false);
 	break;
@@ -676,7 +742,7 @@ static BOOL doInit(HINSTANCE hInstance)
     wc.cbClsExtra = 0;
     wc.cbWndExtra = 0;
     wc.hInstance = hInstance;
-    wc.hIcon = LoadIcon(hInstance, IDI_APPLICATION);
+    wc.hIcon = LoadIcon(hInstance, MAKEINTRESOURCE(1));
     wc.hCursor = LoadCursor(NULL, IDC_ARROW);
     wc.hbrBackground = (HBRUSH)GetStockObject(BLACK_BRUSH);
     wc.lpszMenuName = NULL;
@@ -695,6 +761,13 @@ static BOOL doInit(HINSTANCE hInstance)
 
     ShowWindow(hwndMain, SW_SHOWNORMAL);
     UpdateWindow(hwndMain);
+
+    // -menu attaches the debug menu bar, like DOOM95's -menu.
+    if (M_CheckParm("-menu"))
+    {
+	SetMenu(hwndMain, LoadMenu(hInstance, MAKEINTRESOURCE(103)));
+	DrawMenuBar(hwndMain);
+    }
 
     return TRUE;
 }
