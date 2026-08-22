@@ -10,10 +10,10 @@ CROSS	= i686-w64-mingw32-
 CC	= $(CROSS)gcc
 CXX	= $(CROSS)g++
 
-CFLAGS	= -std=gnu89 -g -O1 -Wall -DWIN95 -DRANGECHECK
-CXXFLAGS= -g -O1 -Wall -DWIN95
+CFLAGS	= -std=gnu89 -g -O1 -Wall -DWIN95 -DRANGECHECK -Iinclude
+CXXFLAGS= -g -O1 -Wall -DWIN95 -Iinclude
 LDFLAGS	= -mwindows -static-libgcc
-LIBS	= -lddraw -ldsound -ldinput -ldplayx -lole32 -ldxguid -lwinmm -lgdi32 -luser32 -ladvapi32 -lm
+LIBS	= -lddraw -ldsound -ldinput -ldplayx -lole32 -ldxguid -lwinmm -lgdi32 -luser32 -ladvapi32 -Llib -l:XBANDAPI.a -lws2_32 -lm
 
 # subdirectory for objects
 O	= obj
@@ -28,6 +28,7 @@ OBJS	=			\
 	$(O)/i_dinput.o		\
 	$(O)/i_sound.o		\
 	$(O)/i_winmus.o		\
+	$(O)/i_xband.o		\
 	$(O)/doomdef.o		\
 	$(O)/doomstat.o		\
 	$(O)/dstrings.o		\

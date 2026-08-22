@@ -43,6 +43,7 @@ extern "C" {
 #include "i_video.h"
 #include "i_sound.h"
 #include "i_net.h"
+#include "i_xband.h"
 #include "d_main.h"
 #include "m_argv.h"
 #include "m_misc.h"
@@ -1084,6 +1085,16 @@ void I_InitNetwork(void)
     doomcom->extratics = 0;
     doomcom->id = DOOMCOM_ID;
 
+    // XBAND transport: active when spawned by an XBUI front-end (the
+    // original service model) or forced with -xband.
+    if (I_XBANDEnabled())
+    {
+	if (!I_XBANDConnect())
+	    I_Error("XBAND: cannot talk to XBUI front-end");
+	atexit(I_XBANDShutdown);
+	return;
+    }
+
     if (!M_CheckParm("-net"))
     {
 	netgame = false;
@@ -1140,7 +1151,16 @@ void I_NetCmd(void)
 {
     static byte	pkt[512];
 
-    if (!netgame || !lpDP)
+    if (!netgame)
+	return;
+
+    if (I_XBANDActive())
+    {
+	I_XBANDNetCmd();
+	return;
+    }
+
+    if (!lpDP)
 	return;
 
     if (doomcom->command == CMD_SEND)
