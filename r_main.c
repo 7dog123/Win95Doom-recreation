@@ -40,6 +40,12 @@ static const char rcsid[] = "$Id: r_main.c,v 1.5 1997/02/03 22:45:12 b1 Exp $";
 #include "r_local.h"
 #include "r_sky.h"
 
+#ifdef USEASM
+// Assembly inner loops from linear.asm.
+void R_DrawColumn_Asm (void);
+void R_DrawSpan_Asm (void);
+#endif
+
 
 
 
@@ -701,10 +707,16 @@ void R_ExecuteSetViewSize (void)
 
     if (!detailshift)
     {
+#ifdef USEASM
+	// Assembly inner loops from linear.asm.
+	colfunc = basecolfunc = R_DrawColumn_Asm;
+	spanfunc = R_DrawSpan_Asm;
+#else
 	colfunc = basecolfunc = R_DrawColumn;
+	spanfunc = R_DrawSpan;
+#endif
 	fuzzcolfunc = R_DrawFuzzColumn;
 	transcolfunc = R_DrawTranslatedColumn;
-	spanfunc = R_DrawSpan;
     }
     else
     {

@@ -1,8 +1,7 @@
 ################################################################
 #
 # Win95Doom-remake - DOOM95 recreation build
-# Cross compile with the mingw 32 bit toolchain:
-#   make -f Makefile.w95
+# Cross compile with the mingw 32 bit toolchain
 #
 ################################################################
 
@@ -10,10 +9,14 @@ CROSS	= i686-w64-mingw32-
 CC	= $(CROSS)gcc
 CXX	= $(CROSS)g++
 
-CFLAGS	= -std=gnu89 -g -O1 -Wall -DWIN95 -DRANGECHECK -Iinclude
+CFLAGS	= -std=gnu89 -g -O1 -Wall -DWIN95 -DRANGECHECK -DUSEASM -Iinclude
 CXXFLAGS= -g -O1 -Wall -DWIN95 -Iinclude
 LDFLAGS	= -mwindows -static-libgcc
 LIBS	= -lddraw -ldsound -ldinput -ldplayx -lole32 -ldxguid -lwinmm -lgdi32 -luser32 -ladvapi32 -Llib -l:XBANDAPI.a -lws2_32 -lm
+
+# assembly inner loops (linear.asm)
+NASM	= nasm
+NFLAGS	= -f win32
 
 # subdirectory for objects
 O	= obj
@@ -70,6 +73,7 @@ OBJS	=			\
 	$(O)/r_bsp.o		\
 	$(O)/r_data.o		\
 	$(O)/r_draw.o		\
+	$(O)/linear.o		\
 	$(O)/r_main.o		\
 	$(O)/r_plane.o		\
 	$(O)/r_segs.o		\
@@ -106,6 +110,9 @@ $(O)/%.o:	%.c
 
 $(O)/%.o:	%.cpp
 	$(CXX) $(CXXFLAGS) -c $< -o $@
+
+$(O)/%.o:	%.asm
+	$(NASM) $(NFLAGS) $< -o $@
 
 clean:
 	rm -rf $(O) $(O)/DOOM95.EXE
