@@ -37,7 +37,7 @@ OBJS	=			\
 	$(O)/dstrings.o		\
 	$(O)/tables.o		\
 	$(O)/f_finale.o		\
-	$(O)/f_wipe.o 		\
+	$(O)/dutils.o		\
 	$(O)/d_main.o		\
 	$(O)/d_net.o		\
 	$(O)/d_items.o		\
@@ -48,7 +48,6 @@ OBJS	=			\
 	$(O)/m_bbox.o		\
 	$(O)/m_fixed.o		\
 	$(O)/m_swap.o		\
-	$(O)/m_cheat.o		\
 	$(O)/m_random.o		\
 	$(O)/am_map.o		\
 	$(O)/p_ceilng.o		\
