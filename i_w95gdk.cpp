@@ -79,111 +79,8 @@ void			ComputeStretchRect(int clientw, int clienth);
 static boolean		graphics_started = false;
 
 // ---------------------------------------------------------------------------
-// Time
+// Time, zone memory, errors and startup live in i_win32.cpp.
 // ---------------------------------------------------------------------------
-
-static DWORD	dwBaseTime = 0;
-
-int I_GetTime(void)
-{
-    if (!dwBaseTime)
-	dwBaseTime = timeGetTime();
-    return (timeGetTime() - dwBaseTime) * TICRATE / 1000;
-}
-
-void I_WaitVBL(int count)
-{
-    Sleep(count * (1000 / 70));
-}
-
-// ---------------------------------------------------------------------------
-// Zone memory
-// ---------------------------------------------------------------------------
-
-byte* I_ZoneBase(int* size)
-{
-    int		mb = 8;
-    int		p;
-    byte*	mem;
-
-    p = M_CheckParm("-mb");
-    if (p && p < myargc - 1)
-	mb = atoi(myargv[p + 1]);
-    if (mb < 6)
-	mb = 6;
-
-    mem = (byte*)VirtualAlloc(NULL, mb * 1024 * 1024,
-			      MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE);
-    if (!mem)
-	I_Error("Could not allocate %i MB of zone memory", mb);
-
-    printf("zone memory: %i MB allocated\n", mb);
-    *size = mb * 1024 * 1024;
-    return mem;
-}
-
-byte* I_AllocLow(int length)
-{
-    byte*	mem;
-
-    mem = (byte*)VirtualAlloc(NULL, length,
-			      MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE);
-    if (!mem)
-	I_Error("I_AllocLow: VirtualAlloc failed");
-    memset(mem, 0, length);
-    return mem;
-}
-
-// ---------------------------------------------------------------------------
-// Errors and shutdown
-// ---------------------------------------------------------------------------
-
-void I_Error(char* error, ...)
-{
-    va_list	argptr;
-    char	msg[1024];
-
-    va_start(argptr, error);
-    vsprintf(msg, error, argptr);
-    va_end(argptr);
-
-    // Leave exclusive mode so the message box is visible.
-    I_ShutdownGraphics();
-
-    MessageError(msg);
-    exit(-1);
-}
-
-void I_Shutdown(void)
-{
-    I_ShutdownGraphics();
-}
-
-void I_Quit(void)
-{
-    D_QuitNetGame();
-    I_ShutdownSound();
-    I_ShutdownMusic();
-    M_SaveDefaults();
-    I_ShutdownGraphics();
-    exit(0);
-}
-
-void I_Tactile(int on, int off, int total)
-{
-}
-
-ticcmd_t* I_BaseTiccmd(void)
-{
-    static ticcmd_t	emptycmd;
-    return &emptycmd;
-}
-
-void I_Init(void)
-{
-    // Timer starts on first I_GetTime; sound comes up elsewhere.
-    I_InitSound();
-}
 
 // ---------------------------------------------------------------------------
 // Input event queues.
@@ -566,26 +463,6 @@ void I_EndRead(void)
 // ---------------------------------------------------------------------------
 // Paths
 // ---------------------------------------------------------------------------
-
-extern "C" void I_GetExeDir(char* buf, int maxlen)
-{
-    char	exePath[MAX_PATH];
-    char*	lastSlash;
-
-    buf[0] = 0;
-    if (GetModuleFileName(NULL, exePath, sizeof(exePath)) == 0)
-	return;
-
-    lastSlash = strrchr(exePath, '\\');
-    if (!lastSlash)
-	return;
-
-    if (lastSlash - exePath >= maxlen)
-	return;
-
-    memcpy(buf, exePath, lastSlash - exePath);
-    buf[lastSlash - exePath] = 0;
-}
 
 // ---------------------------------------------------------------------------
 // Network - DirectPlay multiplayer, like the original i_w95gdk.cpp.

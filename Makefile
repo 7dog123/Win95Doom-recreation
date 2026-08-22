@@ -1,7 +1,8 @@
 ################################################################
 #
 # Win95Doom-remake - DOOM95 recreation build
-# Cross compile with the mingw 32 bit toolchain
+# Cross compile with the mingw 32 bit toolchain:
+#   make -f Makefile.w95
 #
 ################################################################
 
@@ -24,6 +25,7 @@ O	= obj
 OBJS	=			\
 	$(O)/doom95.o		\
 	$(O)/i_w95gdk.o		\
+	$(O)/i_win32.o		\
 	$(O)/i_main.o		\
 	$(O)/i_vkey.o		\
 	$(O)/i_config.o		\
@@ -80,6 +82,7 @@ OBJS	=			\
 	$(O)/r_sky.o		\
 	$(O)/r_things.o		\
 	$(O)/w_wad.o		\
+	$(O)/wadread.o		\
 	$(O)/wi_stuff.o		\
 	$(O)/v_video.o		\
 	$(O)/st_lib.o		\

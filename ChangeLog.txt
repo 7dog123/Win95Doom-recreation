@@ -1,0 +1,287 @@
+=====================================================================
+ Win95Doom-remake - Complete Project ChangeLog
+ Through 2026-08-22
+=====================================================================
+
+A faithful recreation of id Software's DOOM95 (the official Windows
+95 port, shipped mid-1996), rebuilt on top of the original DOOM C
+source and driven by archaeology of the surviving binaries.
+
+Historical anchors preserved in-tree (files keep their true 1996
+mtimes):
+
+    DOOM95.EXE     June   6, 1996      DOOMCFG.DLL  May 28, 1996
+    DOOMLNCH.DLL   June   6, 1996     DOOMIPX.DLL  May 29, 1996
+    DOOMMDM.DLL    May   29, 1996     DOOMSER.DLL  May 29, 1996
+    dpxband.dll    May   15, 1996     <-- matches handshake exp1
+                                          constant 0x19960515 exactly
+
+---------------------------------------------------------------------
+ PHASE 0 - artifact collection & RE preparation (through Aug 18)
+---------------------------------------------------------------------
+
+* Gathered the surviving original distribution binaries listed
+  above, plus the XBAND components.
+* Extracted the CodeView debug info from the original DOOM95.EXE
+  into DOOM95_debug_info.txt (2026-08-18). This file became the
+  project's map: it lists every source unit that went into the
+  shipping binary (am_map.c ... z_zone.c, the win\code CPP files,
+  linear.asm, and the in-tree i_xband.cpp), and directly guided
+  later reconstructions (linear.asm = #54, dutils.c = #4,
+  dither.c = #3).
+
+---------------------------------------------------------------------
+ PHASE 1 - repo foundation & engine import (2026-08-20)
+---------------------------------------------------------------------
+
+* Git base established on the historical DOOM-source repository
+  ("The DOOM sources as originally released on December 23, 1997",
+  plus the 2012 IPX and serial/model driver additions).
+* Imported linuxdoom-1.10/ as the portable C engine.
+* Repo scaffolding: README.TXT, LICENSE.TXT, .gitignore.
+* Preserved original network driver sources: ipx/, sersrc/.
+* MASS PORT of the game core into win95/: all r_*, p_*, m_*,
+  hu_lib/hu_stuff, st_lib/st_stuff, wi_stuff, f_finale, g_game,
+  w_wad, v_video, s_sound, sounds, tables, info, d_* modules and
+  their headers.
+* Early Win32 layer brought up: i_main.c (message loop),
+  i_sound.c (DirectSound), i_winmus.c (Windows MIDI music),
+  i_vkey.c (virtual key mapping), doomtype/doomdef/doomstat glue.
+
+---------------------------------------------------------------------
+ PHASE 2 - launcher & shell archaeology (2026-08-20)
+---------------------------------------------------------------------
+
+* Resource extraction from the original companion DLLs:
+  doomcfgdll_resource_dump/ (DOOMCFG.DLL) and
+  doomlnchdll_resource_dump/ (DOOMLNCH.DLL).
+
+---------------------------------------------------------------------
+ PHASE 3 - shell completion, first boots, black screen (Aug 21)
+---------------------------------------------------------------------
+
+* Completed the Win32 shell: i_launch.cpp (splash screen, progress
+  bar, boot log pane - like the original's launcher), i_config.c
+  (registry-backed config at SOFTWARE\ID\Doom95\Config),
+  i_dinput.c (DirectInput keyboard/joystick), res/*.bmp bitmaps +
+  doom95.rc, doom95.cpp (window/DirectDraw ownership).
+* First successful boots under wine; DirectPlay TCP/IP netplay
+  experiments against two simultaneous instances.
+
+BLACK SCREEN ARC (midday, screenshot 2026-08-21 13:25):
+
+* Symptom: display cut off / black during startup under wine.
+* Palette audit proved every displayed pixel matched PLAYPAL -
+  V_DrawPatch exonerated (~61k pixels checked).
+* Added -DRANGECHECK to Makefile.w95 as a diagnostic gate (kept).
+* ROOT CAUSE: DirectDraw clipper attached to the primary surface
+  made wine cull top-half blits while the window was not yet
+  mapped.
+* FIX: removed clipper attachment in CreateWindowMode (doom95.cpp).
+* Verified via in-game readback diagnostics: top/bottom diffs
+  0.0/0.0 at frames 40/80/120 (previously bottom 0.92, top 60.22).
+* Diagnostics cleaned up; deployed to the Win95 prefix as
+  DOOM95R.EXE.
+
+---------------------------------------------------------------------
+ PHASE 4 - XBAND reverse engineering (2026-08-21, day/evening)
+---------------------------------------------------------------------
+
+* Wrote PE analysis tooling: pedasm.py (recursive-descent
+  disassembly from entry + exports, then linear sweep),
+  dumpfn.py, vsurvey.py.
+* Full disassemblies produced: xband docs/dpxband.asm (~1.7 MB)
+  and dpmodemx.asm.
+* Resource dumps: doom95exe_resource_dump/,
+  dpxband_resource_dump/.
+* Protocol documented in XBAND_RE_NOTES.md: the game talks to an
+  "XBUI" front-end over two anonymous pipes (XBUIREAD/XBUIWRITE
+  decimal HANDLE env vars); 16-byte requests {op,a,b,c}, framed
+  responses {len,len}{payload}; opcodes INIT(1000)/GETGAMEDATA/
+  SENDGAMEDATA/GETPLAYERDATA/SETPLAYERNUM; INIT payload carries a
+  16-byte signature ("W95DOOM-XBAND") plus exp1=0x19960515 and
+  exp2=2, player count and role.
+* RECONSTRUCTION PROJECT xband/:
+  - Headers: xband.h, xbandapi.h, dpxband.h (also mirrored into
+    win95/include/).
+  - xband.c: client library with NATIVE pipe backend and DLL
+    backend (LoadLibrary of genuine XBANDAPI.dll, wire format
+    verified against XBANDAPI.asm 0x10001450+).
+  - dpxband.c/.def/rc: rebuilt DPXBAND.DLL shim.
+  - xbui.c: reimplementation of the XBUI front-end - owns UDP,
+    spawns the game with inherited pipe handles, relays datagrams.
+  - Test suite: apitest, chat, dlltest, dptest + test/e2e.sh;
+    chat connect/PING/PONG passed over real UDP loopback.
+  - Static archives installed into win95/lib/.
+
+---------------------------------------------------------------------
+ PHASE 5 - game-side XBAND integration (Aug 21 night -> Aug 22)
+---------------------------------------------------------------------
+
+* NEW FILES: win95/i_xband.c / i_xband.h.
+* Activation gates: XBUIREAD/XBUIWRITE env handles, -xband force,
+  -noxband veto. Fully optional; zero footprint in normal play.
+* Wired into i_w95gdk.cpp (I_InitNetwork probe branch, I_NetCmd
+  dispatch). Node mapping self=0/peer=1; consoleplayer clamped
+  from XB_Role(); numnodes=2 (XBAND is one-on-one).
+* Build fixes: boolean/rpcndr.h clash (lean-windows pattern) and
+  -l:XBANDAPI.a archive syntax. First link 2026-08-22 01:03.
+
+---------------------------------------------------------------------
+ PHASE 6 - netgame bring-up (2026-08-22, early AM)
+---------------------------------------------------------------------
+
+Five stacked bugs found and fixed:
+
+1. WAD-not-found masquerading as a hang: WIN95 branch searches only
+   exe-dir/CWD (d_main.c D_SetupWadPaths95), ignores DOOMWADDIR.
+2. exp1 mismatch: xbui serves exp1=0x19960515, exp2=2; client sent
+   0,0.
+3. Stale archive: linked vendored win95/lib copy instead of the
+   rebuilt one; win95/lib refreshed.
+4. CreateProcess shadowing: xbui launched a stale exe from its own
+   application directory first; absolute Z:/ paths + MD5 checks in
+   test scripts now.
+5. UDP peer discovery deadlock: host drops datagrams until a peer
+   is learned while a listening DOOM never sends; explicit --peer
+   on both sides.
+
+RESULT: full netgame - host player 1 of 2, guest player 2 of 2,
+identical arbitration (startskill 2 startmap 1 startepisode 1),
+both rendering E1M1 from different viewpoints with live tics.
+
+Cleanup: debug traces stripped; archives refreshed; solo
+regression green (player 1 of 1); DOOM95R.EXE deployed.
+
+---------------------------------------------------------------------
+ PHASE 7 - linear.asm (2026-08-22, morning)
+---------------------------------------------------------------------
+
+* NEW FILE: win95/linear.asm (NASM, -f win32) - recreation of the
+  original module (source #54): renderer inner loops, per id's DOS
+  tmap.S shipped in README.asm.
+* _R_DrawColumn_Asm uses the tmap.S frac<<9 / >>25 precision trick;
+  register-based, no self-modifying code, no colormap-alignment
+  assumptions.
+* BUG CAUGHT vs reference: tmap.S packs span position/step and
+  drops the six lowest fraction bits of each component, shifting
+  single texels on longer spans. Our span routine advances full
+  32-bit fractions instead.
+* PROOF: harness linking both implementations side by side over
+  20,000 seeded-random cases - byte-exact everywhere, including
+  wrap-around and negative-count early returns.
+* Hooked via existing colfunc/spanfunc pointers under -DUSEASM in
+  r_main.c; fuzz/translated/low-detail variants remain C.
+* Makefile gained the NASM rule and obj/linear.o.
+* In-game A/B identical beyond animation noise. Deployed.
+
+---------------------------------------------------------------------
+ PHASE 8 - XBAND.ID manifests in xbui (2026-08-22, midday)
+---------------------------------------------------------------------
+
+* Decoded repo-root XBAND.ID: the lobby-discovery card of the
+  canceled Catapult/Microsoft PC service. GUID
+  {16E98F70-1045-11CF-A4F0-00AA0060F461}; Title "Doom 95";
+  ExeFileName = "Doom95.exe -guid b219d8c3211211cf... -players 2";
+  GamePlatform = 2.
+* EXTENDED xbui.exe: --scan DIR reads DIR\XBAND.ID ([XBAND]
+  section). Absent --game, launches the ExeFileName template
+  verbatim; relative program names resolve against the scanned
+  directory so strays can never shadow. Explicit --game still
+  overrides; missing card degrades to standalone mode.
+* BUG FIXED EN ROUTE: trim value whitespace BEFORE quote-stripping
+  - a leading blank defeated Unquote, outer quotes survived, and
+  SplitCmd treated the entire template as one quoted program name.
+* Game side untouched: unknown parms (-guid/-players) flow through
+  harmlessly; activation remains purely pipe-gated.
+* Verified end to end: both sides discover "Doom 95" via --scan .
+  alone and form a full netgame; solo regression dormant.
+
+---------------------------------------------------------------------
+ PHASE 9 - dutils.c (2026-08-22, afternoon)
+---------------------------------------------------------------------
+
+* NEW FILE: win95/dutils.c - "Dave's utilities" (original source
+  #4; the shipping binary lists neither f_wipe.c nor m_cheat.c).
+* Generic circular doubly-linked list primitives:
+  D_LinkInit / D_LinkInsertAfter / D_LinkInsertBefore /
+  D_LinkRemove / D_LinkEmpty.
+* SCREEN WIPE PACKAGE folded in verbatim from f_wipe.c.
+* CHEAT SEQUENCE PACKAGE folded in verbatim from m_cheat.c.
+* Both rcsids renamed to coexist in one translation unit.
+* Makefile.w95: dutils.o replaces f_wipe.o + m_cheat.o; old
+  sources kept on disk; headers unchanged so callers needed no
+  edits.
+* Symbols verified via nm; solo boot regression green; deployed.
+
+---------------------------------------------------------------------
+ PHASE 10 - dither.c / dither.h (2026-08-22, late afternoon)
+---------------------------------------------------------------------
+
+* NEW FILES: win95/dither.c, win95/dither.h (original source #3):
+  ordered-dither quantization for restrictive desktop depths.
+* 4x4 Bayer matrix; Dither_Update caches tables keyed on palette +
+  channel maxes/shifts; Dither_Table16 (256x16 phases for crushing
+  formats) and Dither_Table32 (exact identity LUT for truecolor).
+* CopyToSurface integration: >=24bpp path now a single LUT lookup
+  per pixel; <=16bpp picks table[index*16 + ((y&3)*4)+(x&3)],
+  blending quantization error spatially.
+* Header kept windows.h-clean (unsigned char prototype); the 33
+  doomtype.h macro warnings in i_w95gdk.cpp confirmed PRE-EXISTING
+  by include A/B.
+* Host unit tests all pass: endpoints exact in every phase, levels
+  always floor or ceil of exact scale, outputs in range, cache
+  invalidation works.
+* In-game A/B at desktop depth vs previous binary: animation noise
+  only. Deployed.
+
+---------------------------------------------------------------------
+ PHASE 11 - i_win32.cpp (2026-08-22, evening)
+---------------------------------------------------------------------
+
+* NEW FILE: win95/i_win32.cpp (original source #53): dedicated
+  Win32 system-services module.
+* Carved out of i_w95gdk.cpp into their historical home: engine
+  ticks (I_GetTime via timeGetTime, I_WaitVBL), the VirtualAlloc
+  back-end under the zone allocator (I_ZoneBase honoring -mb,
+  I_AllocLow), fatal-error and shutdown orchestration (I_Error /
+  I_Shutdown / I_Quit), engine hooks (I_BaseTiccmd, I_Tactile),
+  and startup (I_Init). Also moved I_GetExeDir here.
+* NEW: set386() - named for the startup symbol the original binary
+  carried from its Watcom era; on Win32 it records processor
+  capabilities via IsProcessorFeaturePresent (RDTSC/MMX/CX8),
+  exposed through I_CpuFeatures(). Invoked from I_Init().
+* Makefile.w95: obj/i_win32.o added after i_w95gdk.o.
+* Symbols verified via nm; clean link (one linkage fix: MessageError
+  is C++-mangled in doom95.cpp); solo boot regression green.
+
+---------------------------------------------------------------------
+ PHASE 12 - wadread.c (2026-08-22, evening)
+---------------------------------------------------------------------
+
+* NEW FILES: win95/wadread.c, win/wadread.h (original source #47):
+  standalone WAD file reader - the tool-era grab-bag sibling of
+  dutils.c.  Nothing in the game calls it; community analyses file
+  the original under redundant ghost code, and this recreation
+  ships in exactly that spirit: linked in, minding its own
+  business.
+* API (wadread_* prefix, no collision with w_wad's W_*): open /
+  close with full directory load, numlumps, case-insensitive
+  findlump (backward scan like the engine), lumpsize, readlump,
+  and an extract() find+allocate+read convenience.
+* VERIFIED against the real retail IWAD (2,306 lumps): PLAYPAL
+  extracted at its directory-record size (10,752 bytes = 14 x
+  768-palette), E1M1 correctly reported as a zero-byte map marker,
+  THINGS non-empty, bogus lookups return -1, close resets state -
+  all host-side tests passed.
+* Makefile.w95: obj/wadread.o after w_wad.o.
+* Solo boot regression green.
+
+---------------------------------------------------------------------
+ SHIPPED
+---------------------------------------------------------------------
+
+Final artifact: win95/obj/DOOM95.EXE
+md5 3aed941fff12cc9eb00f0f8c7a94c848
+
+=====================================================================
