@@ -37,6 +37,7 @@ OBJS	=			\
 	$(O)/dstrings.o		\
 	$(O)/tables.o		\
 	$(O)/f_finale.o		\
+	$(O)/dither.o		\
 	$(O)/dutils.o		\
 	$(O)/d_main.o		\
 	$(O)/d_net.o		\

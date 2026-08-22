@@ -37,6 +37,7 @@ rcsid[] = "$Id: i_w95gdk.cpp,v 1.0 win95 Exp $";
 extern "C" {
 #include "doomdef.h"
 #include "doomstat.h"
+#include "dither.h"
 #include "d_event.h"
 #include "d_ticcmd.h"
 #include "i_system.h"
@@ -435,34 +436,66 @@ static boolean CopyToSurface(LPDIRECTDRAWSURFACE lpDDS, byte* source)
     }
     else if (iDestBPP == 32)
     {
+	unsigned*	lut;
+
+	Dither_Update(pal, iRMax, iGMax, iBMax,
+		      iRShift, iGShift, iBShift);
+	lut = Dither_Table32();
+
 	for (y = 0 ; y < SCREENHEIGHT ; y++)
 	{
 	    unsigned*	d = (unsigned*)(dest + y * ddsd.lPitch);
 	    byte*	s = source + y * SCREENWIDTH;
 
-	    for (x = 0 ; x < SCREENWIDTH ; x++)
+	    if (lut)
 	    {
-		int	i = s[x] * 3;
-		d[x] = ((pal[i]     * iRMax / 255) << iRShift) |
-		       ((pal[i + 1] * iGMax / 255) << iGShift) |
-		       ((pal[i + 2] * iBMax / 255) << iBShift);
+		for (x = 0 ; x < SCREENWIDTH ; x++)
+		    d[x] = lut[s[x]];
+	    }
+	    else
+	    {
+		for (x = 0 ; x < SCREENWIDTH ; x++)
+		{
+		    int	i = s[x] * 3;
+		    d[x] = ((pal[i]     * iRMax / 255) << iRShift) |
+			   ((pal[i + 1] * iGMax / 255) << iGShift) |
+			   ((pal[i + 2] * iBMax / 255) << iBShift);
+		}
 	    }
 	}
     }
-    else // 16 bpp and others
+    else // 16 bpp and other packed formats
     {
+	unsigned short*	dt;
+
+	Dither_Update(pal, iRMax, iGMax, iBMax,
+		      iRShift, iGShift, iBShift);
+	dt = Dither_Table16();
+
 	for (y = 0 ; y < SCREENHEIGHT ; y++)
 	{
 	    unsigned short*	d = (unsigned short*)(dest + y * ddsd.lPitch);
 	    byte*		s = source + y * SCREENWIDTH;
 
-	    for (x = 0 ; x < SCREENWIDTH ; x++)
+	    if (dt)
 	    {
-		int	i = s[x] * 3;
-		d[x] = (unsigned short)
-		       (((pal[i]     * iRMax / 255) << iRShift) |
-			((pal[i + 1] * iGMax / 255) << iGShift) |
-			((pal[i + 2] * iBMax / 255) << iBShift));
+		// pick one of sixteen dithered quantizations per
+		// pixel from the 4x4 matrix
+		int	phase = (y & 3) * 4;
+
+		for (x = 0 ; x < SCREENWIDTH ; x++)
+		    d[x] = dt[s[x] * 16 + phase + (x & 3)];
+	    }
+	    else
+	    {
+		for (x = 0 ; x < SCREENWIDTH ; x++)
+		{
+		    int	i = s[x] * 3;
+		    d[x] = (unsigned short)
+			   (((pal[i]     * iRMax / 255) << iRShift) |
+			    ((pal[i + 1] * iGMax / 255) << iGShift) |
+			    ((pal[i + 2] * iBMax / 255) << iBShift));
+		}
 	    }
 	}
     }
